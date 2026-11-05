@@ -1,0 +1,21 @@
+{
+  "vm": {
+    "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset.",
+    "backend": "libvirt with QEMU/KVM",
+    "packages": [
+      "qemu-base",
+      "libvirt",
+      "edk2-ovmf",
+      "dnsmasq"
+    ],
+    "init_packages": {},
+    "services": [
+      "libvirtd"
+    ],
+    "installed_check": "virsh --version",
+    "accel_check": "test -e /dev/kvm",
+    "dataset_ensure": "zfs list -H -o name {dataset} >/dev/null 2>&1 || zfs create {dataset}",
+    "configure": "true",
+    "list": "out=$(LC_ALL=C virsh -c qemu:///system list --all) && printf '%s\\n' \"$out\" | awk 'NR>2 && NF {{ print $2 \"\\t\" ($3 == \"running\" ? \"running\" : \"stopped\") }}'"
+  }
+}

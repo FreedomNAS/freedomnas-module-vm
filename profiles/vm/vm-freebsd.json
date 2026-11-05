@@ -1,0 +1,18 @@
+{
+  "vm": {
+    "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset.",
+    "backend": "bhyve with vm-bhyve",
+    "packages": [
+      "vm-bhyve",
+      "edk2-bhyve",
+      "grub2-bhyve"
+    ],
+    "init_packages": {},
+    "services": [],
+    "installed_check": "vm version",
+    "accel_check": "kldload -n vmm && {{ [ \"$(sysctl -n hw.vmm.vmx.initialized 2>/dev/null)\" = 1 ] || sysctl -n hw.vmm.svm.features >/dev/null 2>&1; }}",
+    "dataset_ensure": "zfs list -H -o name {dataset} >/dev/null 2>&1 || zfs create {dataset}",
+    "configure": "sysrc vm_enable=YES vm_dir=zfs:{dataset} && vm init",
+    "list": "out=$(vm list) && printf '%s\\n' \"$out\" | awk 'NR>1 && NF {{ print $1 \"\\t\" (/Running/ ? \"running\" : \"stopped\") }}'"
+  }
+}

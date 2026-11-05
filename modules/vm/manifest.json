@@ -1,0 +1,31 @@
+{
+  "id": "vm",
+  "name": "Virtual machines",
+  "version": "0.1.0",
+  "type": "community",
+  "description": "Virtual machines on the NAS: libvirt with QEMU/KVM on Linux, vm-bhyve on FreeBSD",
+  "entry_point": "module:VmModule",
+  "supported_os": [
+    "debian",
+    "arch",
+    "artix",
+    "void",
+    "gentoo",
+    "freebsd"
+  ],
+  "depends_on": [],
+  "webui": {
+    "api_routes": "api_routes.py",
+    "route_prefix": "/api/vm",
+    "router_attr": "router",
+    "templates_dir": "frontend/templates",
+    "static_dir": "frontend/static",
+    "page_route": "/vm/",
+    "page_template": "vm.html",
+    "nav": {
+      "label": "Virtual machines",
+      "icon": "icons.svg#vm",
+      "level": "advanced"
+    }
+  }
+}

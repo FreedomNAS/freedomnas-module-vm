@@ -1,0 +1,19 @@
+Source: freedomnas-module-vm
+Section: admin
+Priority: optional
+Maintainer: FreedomNAS Team <dev@freedomnas.io>
+Standards-Version: 4.6.2
+Build-Depends: debhelper-compat (= 13)
+Homepage: https://codeberg.org/FreedomNAS/freedomnas-module-vm
+Vcs-Browser: https://codeberg.org/FreedomNAS/freedomnas-module-vm
+Vcs-Git: https://codeberg.org/FreedomNAS/freedomnas-module-vm.git
+
+Package: freedomnas-module-vm
+Architecture: all
+Depends: ${misc:Depends}, freedomnas-core (>> 0.9.12), freedomnas-webui (>> 0.9.12)
+Recommends: libvirt-daemon-system, libvirt-clients, qemu-system-x86, qemu-utils, ovmf, dnsmasq-base
+Description: Virtual machines for FreedomNAS
+ FreedomNAS community module that sets up the edition's hypervisor on a data
+ pool: libvirt with QEMU/KVM on Linux, vm-bhyve on FreeBSD.
+ .
+ Ships modules/vm/ and profiles/vm/ under /usr/lib/freedomnas/.

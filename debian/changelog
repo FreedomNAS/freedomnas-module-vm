@@ -1,0 +1,7 @@
+freedomnas-module-vm (0.1.0-1) unstable; urgency=medium
+
+  * The edition's hypervisor installed and set up on a data pool from the
+    WebUI, put back by the reconciler at every boot
+  * The virtual machines listed with their state
+
+ -- FreedomNAS Team <dev@freedomnas.io>  Thu, 05 Nov 2026 12:00:00 +0100

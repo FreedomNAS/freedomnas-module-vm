@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Virtual machines{% endblock %}
+{% block page_title %}Virtual machines{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>Virtual machines</h1>
+    <p>Other operating systems running on the NAS, kept on a data pool</p>
+  </div>
+</div>
+
+<div class="section">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px">Hypervisor</div>
+    <table style="width:100%;font-size:0.875rem">
+      <tbody id="vm-body">
+        <tr><td colspan="2" class="text-muted">Loading…</td></tr>
+      </tbody>
+    </table>
+    <p class="form-hint" id="job-line" hidden></p>
+    <form id="form-setup" class="d-flex gap-3" style="margin-top:14px;flex-wrap:wrap;align-items:flex-end" hidden>
+      <div class="form-group" style="margin:0">
+        <label for="f-pool">Pool</label>
+        <select id="f-pool" class="input" required style="max-width:220px"></select>
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-setup">Set up</button>
+    </form>
+  </div>
+</div>
+
+<div class="section" id="machines-section" hidden>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px">Machines</div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Name</th><th>State</th></tr></thead>
+        <tbody id="machines-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/modules/vm/js/vm.js"></script>
+{% endblock %}
