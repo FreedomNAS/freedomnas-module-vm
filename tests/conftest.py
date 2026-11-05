@@ -19,8 +19,18 @@ sys.path.insert(0, str(REPO / "modules" / "vm"))
 
 
 class FakeConfig:
-    def __init__(self, section=None):
+    def __init__(self, section=None, users=()):
         self.modules = {"vm": dict(section or {})}
+        self.users = {u["username"]: dict(u) for u in users}
+
+    def get_user(self, username):
+        return self.users.get(username)
+
+    def add_user(self, user):
+        self.users[user["username"]] = dict(user)
+
+    def get_users(self):
+        return list(self.users.values())
 
     def get_module_config(self, module_id):
         return json.loads(json.dumps(self.modules.get(module_id, {})))

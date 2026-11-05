@@ -142,11 +142,35 @@ def enabled(config) -> bool:
     return bool((config.get_module_config(MODULE_ID) or {}).get("enabled"))
 
 
-def setup(engine, config, pool: str) -> None:
+def grant_access(engine, config, username: Optional[str]) -> None:
+    """
+    The account that set the module up joins the profile's "access_group", so
+    it can use the hypervisor's own tools. Its record keeps the group for the
+    reconciler; a group or account that is not there, or a failure, changes
+    nothing else about the set up.
+    """
+    group = value(engine, "access_group")
+    user = config.get_user(username) if group and username else None
+    if not user or group in (user.get("groups") or []):
+        return
+    try:
+        out, _ = engine.execute("users", "group_exists", group=group, check=False)
+        if not out.strip():
+            logger.warning("No group %s on this system for %s", group, username)
+            return
+        engine.execute("users", "add_to_group", username=username, group=group)
+    except Exception as exc:
+        logger.warning("Could not add %s to group %s: %s", username, group, exc)
+        return
+    config.add_user({**user, "groups": [*(user.get("groups") or []), group]})
+
+
+def setup(engine, config, pool: str, username: Optional[str] = None) -> None:
     pool = check_pool(engine, pool)
     if not installed(engine):
         install(engine)
     prepare(engine, pool)
+    grant_access(engine, config, username)
     section = dict(config.get_module_config(MODULE_ID) or {})
     section.update(enabled=True, pool=pool)
     config.set_module_config(MODULE_ID, section)
@@ -155,6 +179,7 @@ def setup(engine, config, pool: str) -> None:
 def status(engine, config) -> Dict[str, Any]:
     section = config.get_module_config(MODULE_ID) or {}
     is_installed = installed(engine)
+    group = value(engine, "access_group")
     listed = machines(engine) if is_installed and section.get("enabled") else None
     records = section.get("machines") or {}
     states = {m["name"]: m["state"] for m in listed or []}
@@ -171,6 +196,9 @@ def status(engine, config) -> Dict[str, Any]:
         "pool": section.get("pool"),
         "pools": pools(engine),
         "machines": shown,
+        "access_group": group or None,
+        "access_members": sorted(u["username"] for u in config.get_users()
+                                 if group and group in (u.get("groups") or [])),
     }
 
 

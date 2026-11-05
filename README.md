@@ -14,6 +14,10 @@ This is the module's skeleton:
 - The page shows the hypervisor's state, whether the processor's virtualization
   works, and the machines the hypervisor knows about.
 - The reconciler brings all of it back at boot, on any edition.
+- On Linux, the account that runs Set up joins the `libvirt` group, to use
+  `virsh` and virt-manager with its own login. It has to log out and back in
+  first: a session keeps the groups it started with. The WebUI does not need
+  this, and FreeBSD has no such group: vm-bhyve is for root only.
 
 The page only shows the machines for now: adding, starting and stopping one
 goes through the API.

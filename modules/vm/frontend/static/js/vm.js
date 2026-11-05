@@ -45,6 +45,10 @@ function render() {
   }
   document.getElementById('vm-body').innerHTML = rows.join('');
   renderJob(s.job || {});
+  const access = document.getElementById('access-line');
+  access.hidden = !s.enabled || !s.access_members.length;
+  access.textContent = `${s.access_members.join(', ')} can use virsh and virt-manager with their own account, as members of ` +
+    `the group ${s.access_group}. Log out and back in first, also over SSH: a session keeps the groups it started with.`;
   const busy = (s.job || {}).state === 'running';
   const form = document.getElementById('form-setup');
   form.hidden = s.enabled || busy;

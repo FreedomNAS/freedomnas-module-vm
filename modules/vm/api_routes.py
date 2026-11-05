@@ -83,7 +83,7 @@ async def setup(body: dict, username: str = Depends(authenticate)):
         pool = await asyncio.to_thread(vm.check_pool, engine, body.get("pool"))
     except vm.VmError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return _start_job("setup", lambda: vm.setup(engine, config, pool))
+    return _start_job("setup", lambda: vm.setup(engine, config, pool, username))
 
 
 async def _call(func, *args):

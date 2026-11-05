@@ -210,3 +210,36 @@ def test_status_shows_records_and_machines_it_did_not_make(engine):
     engine.outputs[("vm", "list")] = "win\trunning\nother\tstopped\n"
     shown = vm.status(engine, ready({"win": MACHINE}))["machines"]
     assert [(m["name"], m["state"], m.get("foreign", False)) for m in shown] == [("win", "running", False), ("other", "stopped", True)]
+
+
+def test_set_up_puts_its_account_in_the_access_group_and_its_record(engine):
+    engine.outputs[("users", "group_exists")] = "libvirt:x:79:\n"
+    config = FakeConfig(users=[{"username": "sarah", "groups": ["sudo"]}])
+    vm.setup(engine, config, "tank", "sarah")
+    assert ("users", "add_to_group", {"username": "sarah", "group": "libvirt"}) in engine.calls
+    assert config.get_user("sarah")["groups"] == ["sudo", "libvirt"]
+    shown = vm.status(engine, config)
+    assert shown["access_group"] == "libvirt" and shown["access_members"] == ["sarah"]
+
+
+def test_an_account_already_in_the_group_is_left_alone(engine):
+    config = FakeConfig(users=[{"username": "sarah", "groups": ["libvirt"]}])
+    vm.grant_access(engine, config, "sarah")
+    assert "users.add_to_group" not in engine.actions()
+
+
+def test_a_missing_group_or_a_failure_does_not_stop_the_set_up_or_touch_the_record():
+    config = FakeConfig(users=[{"username": "sarah", "groups": []}])
+    engine = FakeEngine()
+    vm.setup(engine, config, "tank", "sarah")
+    assert "users.add_to_group" not in engine.actions() and config.get_user("sarah")["groups"] == []
+    engine = FakeEngine(failing={("users", "add_to_group")})
+    engine.outputs[("users", "group_exists")] = "libvirt:x:79:\n"
+    vm.setup(engine, config, "tank", "sarah")
+    assert config.get_module_config("vm")["enabled"] and config.get_user("sarah")["groups"] == []
+
+
+def test_freebsd_has_no_access_group():
+    engine, config = FakeEngine("freebsd"), FakeConfig(users=[{"username": "sarah", "groups": []}])
+    vm.setup(engine, config, "tank", "sarah")
+    assert "users.add_to_group" not in engine.actions() and vm.status(engine, config)["access_group"] is None
