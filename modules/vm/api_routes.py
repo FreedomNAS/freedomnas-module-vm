@@ -4,6 +4,9 @@
 GET  /status — the hypervisor: installed, set up, answering, whether the processor's
                virtualization works, the pools it can go on, its machines, and the job
 POST /setup  — {"pool": "tank"}: install the hypervisor if needed and set it up (a job)
+POST   /machines                — {name, cpus, memory_mb, disks: [{size_gb}], nics: [{bridge}]}
+POST   /machines/{name}/{action} — start, stop (the guest shuts itself down) or poweroff
+DELETE /machines/{name}         — remove a stopped machine; ?destroy_disks=true also destroys its disks
 """
 
 import asyncio
@@ -81,3 +84,29 @@ async def setup(body: dict, username: str = Depends(authenticate)):
     except vm.VmError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return _start_job("setup", lambda: vm.setup(engine, config, pool))
+
+
+async def _call(func, *args):
+    try:
+        return await asyncio.to_thread(func, *args)
+    except vm.VmError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"detail": _error_text(exc)})
+
+
+@router.post("/machines")
+async def create_machine(body: dict, username: str = Depends(authenticate)):
+    return await _call(vm.create_machine, get_engine(), get_config(), body.get("name"), body)
+
+
+@router.post("/machines/{name}/{action}")
+async def machine_action(name: str, action: str, username: str = Depends(authenticate)):
+    result = await _call(vm.machine_action, get_engine(), get_config(), name, action)
+    return result if isinstance(result, JSONResponse) else {"name": name, "action": action}
+
+
+@router.delete("/machines/{name}")
+async def remove_machine(name: str, destroy_disks: bool = False, username: str = Depends(authenticate)):
+    result = await _call(vm.remove_machine, get_engine(), get_config(), name, destroy_disks)
+    return result if isinstance(result, JSONResponse) else {"removed": name, "disks_destroyed": destroy_disks}

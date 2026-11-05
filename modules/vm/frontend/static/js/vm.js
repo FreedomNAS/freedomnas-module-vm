@@ -54,8 +54,8 @@ function render() {
   }
   document.getElementById('machines-section').hidden = !s.enabled;
   document.getElementById('machines-body').innerHTML = s.machines.length
-    ? s.machines.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc(m.state)}</td></tr>`).join('')
-    : '<tr><td colspan="2" class="text-muted">No virtual machines yet.</td></tr>';
+    ? s.machines.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc(m.state)}</td><td>${esc(m.cpus ?? '')}</td><td>${m.memory_mb ? `${esc(m.memory_mb)} MiB` : ''}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="text-muted">No virtual machines yet.</td></tr>';
 }
 
 function renderJob(job) {

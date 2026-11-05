@@ -1,6 +1,6 @@
 {
   "vm": {
-    "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset. definition_template, disk_template and nic_template turn the neutral machine record into the backend's definition; firmwares maps the neutral firmware to the backend's word, and a firmware left out is one this edition does not offer.",
+    "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset. definition_template, disk_template and nic_template turn the neutral machine record into the backend's definition. Every edition gives a machine the same hardware: UEFI, virtio disks and networks in the same PCI slots, plain VGA and one serial port.",
     "backend": "libvirt with QEMU/KVM",
     "packages": [
       "qemu-base",
@@ -20,15 +20,16 @@
     "disk_ensure": "zfs list -H -o name {zvol} >/dev/null 2>&1 || zfs create -s -V {size_gb}G {zvol}",
     "dataset_mountpoint": "zfs get -H -o value mountpoint {dataset}",
     "definition_write": "sh -c 'umask 077 && cat > \"$1.new\" && mv \"$1.new\" \"$1\"' definition_write {file}",
-    "firmwares": {
-      "uefi": " firmware='efi'",
-      "bios": ""
-    },
     "definition_suffix": "xml",
-    "definition_template": "<domain type='kvm'>\n  <name>{name}</name>\n  <memory unit='MiB'>{memory_mb}</memory>\n  <vcpu>{cpus}</vcpu>\n  <cpu mode='host-passthrough'/>\n  <os{firmware}>\n    <type arch='x86_64' machine='q35'>hvm</type>\n    <boot dev='hd'/>\n    <boot dev='cdrom'/>\n  </os>\n  <features>\n    <acpi/>\n    <apic/>\n  </features>\n  <devices>\n{disks}{nics}    <graphics type='vnc' autoport='yes' listen='127.0.0.1'/>\n    <video>\n      <model type='virtio'/>\n    </video>\n  </devices>\n</domain>\n",
-    "disk_template": "    <disk type='block' device='disk'>\n      <driver name='qemu' type='raw' cache='none' io='native'/>\n      <source dev='/dev/zvol/{zvol}'/>\n      <target dev='vd{letter}' bus='virtio'/>\n    </disk>\n",
-    "nic_template": "    <interface type='bridge'>\n      <source bridge='{bridge}'/>\n      <model type='virtio'/>\n    </interface>\n",
+    "definition_template": "<domain type='kvm'>\n  <name>{name}</name>\n  <uuid>{uuid}</uuid>\n  <memory unit='MiB'>{memory_mb}</memory>\n  <vcpu>{cpus}</vcpu>\n  <cpu mode='host-passthrough'/>\n  <os firmware='efi'>\n    <type arch='x86_64' machine='pc'>hvm</type>\n    <boot dev='hd'/>\n    <boot dev='cdrom'/>\n  </os>\n  <features>\n    <acpi/>\n    <apic/>\n  </features>\n  <devices>\n{disks}{nics}    <controller type='usb' model='qemu-xhci'/>\n    <input type='tablet' bus='usb'/>\n    <serial type='pty'/>\n    <console type='pty'/>\n    <graphics type='vnc' autoport='yes' listen='127.0.0.1'/>\n    <video>\n      <model type='vga'/>\n    </video>\n    <memballoon model='none'/>\n  </devices>\n</domain>\n",
+    "disk_template": "    <disk type='block' device='disk'>\n      <driver name='qemu' type='raw' cache='none' io='native'/>\n      <source dev='/dev/zvol/{zvol}'/>\n      <target dev='vd{letter}' bus='virtio'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='{slot:#04x}' function='0x0'/>\n    </disk>\n",
+    "nic_template": "    <interface type='bridge'>\n      <mac address='{mac}'/>\n      <source bridge='{bridge}'/>\n      <model type='virtio'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='{slot:#04x}' function='0x0'/>\n    </interface>\n",
     "bridge_ensure": "test -d /sys/class/net/{bridge}/bridge",
-    "define": "virsh -c qemu:///system define {file}"
+    "define": "virsh -c qemu:///system define {file}",
+    "dataset_destroy": "zfs destroy -r {dataset}",
+    "start": "virsh -c qemu:///system start {name}",
+    "stop": "virsh -c qemu:///system shutdown {name}",
+    "poweroff": "virsh -c qemu:///system destroy {name}",
+    "undefine": "virsh -c qemu:///system undefine --nvram {name}"
   }
 }

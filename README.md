@@ -15,8 +15,8 @@ This is the module's skeleton:
   works, and the machines the hypervisor knows about.
 - The reconciler brings all of it back at boot, on any edition.
 
-There is no way yet to add a machine from the WebUI, or to start or stop one:
-machines come from the record in `config.yaml`.
+The page only shows the machines for now: adding, starting and stopping one
+goes through the API.
 
 ## What config.yaml holds
 
@@ -30,31 +30,56 @@ vm:
     win:
       cpus: 2
       memory_mb: 4096
-      firmware: uefi
+      state: up
+      uuid: 6f1c2e3a-0b1d-4c2e-8f3a-1234567890ab
       disks:
         - size_gb: 60
       nics:
         - bridge: fnas_bridge1
+          mac: 52:54:00:aa:bb:cc
 ```
 
 The reconciler turns each machine into the backend's own definition, using the
 templates in the edition's profile: a libvirt domain on Linux, a vm-bhyve
-`.conf` on FreeBSD. Disks are sparse zvols named `<pool>/vm/<machine>/disk<N>`,
-so they travel with the pool. It creates a disk that is missing and never
-resizes or removes one. `bios` firmware exists on Linux only: on FreeBSD such a
-machine stays undefined, with a warning, and its disks are kept.
+`.conf` on FreeBSD. It creates a disk that is missing, never resizes or removes
+one, and starts a machine whose state is `up`.
+
+## Moving a machine between editions
+
+Disks are raw sparse zvols named `<pool>/vm/<machine>/disk<N>`, so they travel
+with the pool and need no conversion. Every machine has the same hardware on
+every edition:
+
+| Part | Standard |
+|------|----------|
+| Firmware | UEFI only: bhyve has no plain BIOS boot |
+| Disks and networks | virtio, disks from PCI slot 4, then networks |
+| Video and input | plain VGA, USB tablet |
+| Serial | one port |
+| Identity | the uuid and MAC addresses in the record |
+
+What a guest can still notice: the firmware's boot entries stay on the old
+edition, so it must boot through the UEFI fallback path
+(`\EFI\BOOT\BOOTX64.EFI`), and a few virtual chipset details differ.
+
+## API
+
+| Route | What it does |
+|-------|--------------|
+| `POST /api/vm/machines` | Creates a machine from `{name, cpus, memory_mb, disks, nics}` |
+| `POST /api/vm/machines/<name>/<action>` | `start`, `stop` (the guest shuts itself down) or `poweroff` |
+| `DELETE /api/vm/machines/<name>` | Removes a stopped machine; its disks stay unless `?destroy_disks=true` |
 
 ## Still to build
 
-1. Create, start, stop and remove from the API.
-2. The page as a list and a detail, like Proxmox without copying it: the list
+1. The page as a list and a detail, like Proxmox without copying it: the list
    of machines, and for the one selected a second menu with Summary, Console,
    Hardware, Passthrough, Options and Snapshots.
-3. The console in the browser: noVNC through a WebSocket of the WebUI that
+2. The console in the browser: noVNC through a WebSocket of the WebUI that
    bridges to the machine's VNC port, which listens on loopback only. It is the
    hardest part and the same on both backends.
-4. An ISO store.
-5. Device passthrough through the IOMMU.
+3. An ISO store.
+4. Device passthrough through the IOMMU.
 
 ## Tests
 

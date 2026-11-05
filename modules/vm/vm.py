@@ -7,14 +7,19 @@ config.yaml (modules.vm) holds what was asked for, never how a backend does it:
 
 "enabled": true once set up,
 "pool": the data pool whose <pool>/vm dataset holds the virtual machines,
-"machines": {name: {"cpus", "memory_mb", "firmware": "uefi"|"bios",
-             "disks": [{"size_gb"}], "nics": [{"bridge"}]}}.
+"machines": {name: {"cpus", "memory_mb", "state": "up"|"down", "uuid",
+             "disks": [{"size_gb"}], "nics": [{"bridge", "mac"}]}}.
+
+A machine has the same hardware on every edition, so its guest can move with
+the pool: UEFI, raw disks and networks on virtio, plain VGA, one serial port,
+and the same PCI slots (disks from slot 4, then networks). Its uuid and MAC
+addresses are made once and stay in the record, so the guest sees the same
+computer.
 
 The reconciler rebuilds the rest on any edition from those values: a dataset
 per machine, a sparse zvol per disk that is missing (it never resizes or removes
-one), and the backend's own definition, written from the profile's templates. A
-firmware the edition does not offer leaves that machine undefined there, with a
-warning; its disks stay. A profile's "list" prints one
+one), the backend's own definition from the profile's templates, and a machine
+that should be up started. A profile's "list" prints one
 "<name><TAB>running|stopped" per machine and fails when the hypervisor does not
 answer.
 """
@@ -23,6 +28,8 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
+import uuid as uuid_module
 from typing import Any, Dict, List, Optional
 
 try:
@@ -38,12 +45,15 @@ DATASET = "vm"
 _POOL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 _MACHINE = re.compile(r"[a-z0-9][a-z0-9_-]{0,30}")
 _BRIDGE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,14}")
-FIRMWARES = ("uefi", "bios")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_MAC = re.compile(r"52:54:00(:[0-9a-f]{2}){3}")
+STATES = ("up", "down")
+FIRST_SLOT = 4
 MAX_CPUS = 256
 MAX_MEMORY_MB = 16 * 1024 * 1024
 MIN_MEMORY_MB = 64
-MAX_DISKS = 16
-MAX_NICS = 8
+MAX_DISKS = 8
+MAX_NICS = 4
 MAX_DISK_GB = 1024 * 1024
 
 
@@ -146,6 +156,12 @@ def status(engine, config) -> Dict[str, Any]:
     section = config.get_module_config(MODULE_ID) or {}
     is_installed = installed(engine)
     listed = machines(engine) if is_installed and section.get("enabled") else None
+    records = section.get("machines") or {}
+    states = {m["name"]: m["state"] for m in listed or []}
+    shown = [{**record, "name": name, "state": states.get(name, "undefined"), "wanted": record.get("state", "down")}
+             for name, record in sorted(records.items())]
+    shown += [{"name": name, "state": state, "foreign": True}
+              for name, state in sorted(states.items()) if name not in records]
     return {
         "backend": value(engine, "backend", ""),
         "installed": is_installed,
@@ -154,7 +170,7 @@ def status(engine, config) -> Dict[str, Any]:
         "accelerated": accelerated(engine) if is_installed else None,
         "pool": section.get("pool"),
         "pools": pools(engine),
-        "machines": listed or [],
+        "machines": shown,
     }
 
 
@@ -171,8 +187,10 @@ def check_machine(name: Any, machine: Any) -> Dict[str, Any]:
         raise VmError("A machine's name is up to 31 lowercase letters, digits, '-' and '_'")
     if not isinstance(machine, dict):
         raise VmError(f"Machine {name} has no settings")
-    if machine.get("firmware") not in FIRMWARES:
-        raise VmError(f"firmware is one of: {', '.join(FIRMWARES)}")
+    if not _UUID.fullmatch(str(machine.get("uuid") or "")):
+        raise VmError(f"Machine {name} has no valid uuid")
+    if machine.get("state", "down") not in STATES:
+        raise VmError(f"state is one of: {', '.join(STATES)}")
     disks, nics = machine.get("disks"), machine.get("nics", [])
     if not isinstance(disks, list) or not 1 <= len(disks) <= MAX_DISKS:
         raise VmError(f"A machine has from 1 to {MAX_DISKS} disks")
@@ -181,47 +199,125 @@ def check_machine(name: Any, machine: Any) -> Dict[str, Any]:
     for nic in nics:
         if not isinstance(nic, dict) or not _BRIDGE.fullmatch(str(nic.get("bridge") or "")):
             raise VmError("A network names the bridge it is on")
+        if not _MAC.fullmatch(str(nic.get("mac") or "")):
+            raise VmError(f"Machine {name} has a network without a valid MAC address")
     return {
         "cpus": _number(machine, "cpus", 1, MAX_CPUS),
         "memory_mb": _number(machine, "memory_mb", MIN_MEMORY_MB, MAX_MEMORY_MB),
-        "firmware": machine["firmware"],
+        "state": machine.get("state", "down"),
+        "uuid": machine["uuid"],
         "disks": [{"size_gb": _number(d if isinstance(d, dict) else {}, "size_gb", 1, MAX_DISK_GB)} for d in disks],
-        "nics": [{"bridge": nic["bridge"]} for nic in nics],
+        "nics": [{"bridge": nic["bridge"], "mac": nic["mac"]} for nic in nics],
     }
 
 
-def definition(engine, pool: str, name: str, machine: Dict[str, Any]) -> Optional[str]:
-    """The backend's definition of a machine, or None when this edition lacks its firmware."""
-    firmware = (value(engine, "firmwares", {}) or {}).get(machine["firmware"])
-    if firmware is None:
-        return None
+def _new_mac() -> str:
+    return "52:54:00:" + ":".join(f"{secrets.randbelow(256):02x}" for _ in range(3))
+
+
+def new_machine(name: Any, settings: Any) -> Dict[str, Any]:
+    """What was asked for plus the identity the machine keeps for good."""
+    if not isinstance(settings, dict):
+        raise VmError("A machine needs its settings")
+    nics = settings.get("nics", [])
+    if not isinstance(nics, list):
+        raise VmError(f"A machine has up to {MAX_NICS} networks")
+    return check_machine(name, {
+        **settings, "state": "down", "uuid": str(uuid_module.uuid4()),
+        "nics": [{"bridge": nic.get("bridge") if isinstance(nic, dict) else None, "mac": _new_mac()} for nic in nics],
+    })
+
+
+def definition(engine, pool: str, name: str, machine: Dict[str, Any]) -> str:
+    """The backend's definition of a machine, with the same hardware on every edition."""
     base = f"{dataset_of(pool)}/{name}"
+    count = len(machine["disks"])
     disks = "".join(
-        value(engine, "disk_template").format(index=index, letter=chr(ord("a") + index), zvol=f"{base}/disk{index}")
-        for index in range(len(machine["disks"])))
+        value(engine, "disk_template").format(index=index, letter=chr(ord("a") + index), zvol=f"{base}/disk{index}",
+                                              slot=FIRST_SLOT + index)
+        for index in range(count))
     nics = "".join(
-        value(engine, "nic_template").format(index=index, bridge=nic["bridge"])
+        value(engine, "nic_template").format(index=index, bridge=nic["bridge"], mac=nic["mac"],
+                                             slot=FIRST_SLOT + count + index)
         for index, nic in enumerate(machine["nics"]))
     return value(engine, "definition_template").format(
-        name=name, cpus=machine["cpus"], memory_mb=machine["memory_mb"], firmware=firmware, disks=disks, nics=nics)
+        name=name, uuid=machine["uuid"], cpus=machine["cpus"], memory_mb=machine["memory_mb"], disks=disks, nics=nics)
 
 
-def apply_machine(engine, pool: str, name: str, machine: Dict[str, Any]) -> bool:
-    """A machine's dataset, missing disks and definition; False when this edition cannot define it."""
+def _definition_file(engine, pool: str, name: str) -> str:
+    out, _ = engine.execute(CATEGORY, "dataset_mountpoint", dataset=f"{dataset_of(pool)}/{name}")
+    return f"{out.strip()}/{name}.{value(engine, 'definition_suffix')}"
+
+
+def apply_machine(engine, pool: str, name: str, machine: Dict[str, Any]) -> None:
+    """A machine's dataset, missing disks and definition."""
     base = f"{dataset_of(pool)}/{name}"
     engine.execute(CATEGORY, "dataset_ensure", dataset=base)
     for index, disk in enumerate(machine["disks"]):
         engine.execute(CATEGORY, "disk_ensure", zvol=f"{base}/disk{index}", size_gb=disk["size_gb"])
-    text = definition(engine, pool, name, machine)
-    if text is None:
-        return False
     for nic in machine["nics"]:
         engine.execute(CATEGORY, "bridge_ensure", bridge=nic["bridge"])
-    out, _ = engine.execute(CATEGORY, "dataset_mountpoint", dataset=base)
-    file = f"{out.strip()}/{name}.{value(engine, 'definition_suffix')}"
-    engine.execute_with_stdin(CATEGORY, "definition_write", text, file=file)
+    file = _definition_file(engine, pool, name)
+    engine.execute_with_stdin(CATEGORY, "definition_write", definition(engine, pool, name, machine), file=file)
     engine.execute(CATEGORY, "define", file=file)
-    return True
+
+
+def _section_ready(config) -> Dict[str, Any]:
+    section = dict(config.get_module_config(MODULE_ID) or {})
+    if not section.get("enabled"):
+        raise VmError("Set up the virtual machines first")
+    return section
+
+
+def _running(engine, name: str) -> bool:
+    return any(m["name"] == name and m["state"] == "running" for m in machines(engine) or [])
+
+
+def create_machine(engine, config, name: Any, settings: Any) -> Dict[str, Any]:
+    section = _section_ready(config)
+    machine = new_machine(name, settings)
+    records = dict(section.get("machines") or {})
+    if name in records or any(m["name"] == name for m in machines(engine) or []):
+        raise VmError(f"There is already a machine named {name}")
+    apply_machine(engine, section["pool"], name, machine)
+    records[name] = machine
+    section["machines"] = records
+    config.set_module_config(MODULE_ID, section)
+    return machine
+
+
+def _record(section: Dict[str, Any], name: str) -> Dict[str, Any]:
+    machine = (section.get("machines") or {}).get(name)
+    if machine is None:
+        raise VmError(f"No machine named {name}")
+    return machine
+
+
+def machine_action(engine, config, name: str, action: str) -> None:
+    """start, stop (the guest shuts itself down) or poweroff, kept as the state the reconciler restores."""
+    if action not in ("start", "stop", "poweroff"):
+        raise VmError(f"Unknown action {action}")
+    section = _section_ready(config)
+    machine = dict(_record(section, name))
+    engine.execute(CATEGORY, action, name=name)
+    machine["state"] = "up" if action == "start" else "down"
+    section["machines"] = {**section["machines"], name: machine}
+    config.set_module_config(MODULE_ID, section)
+
+
+def remove_machine(engine, config, name: str, destroy_disks: bool = False) -> None:
+    """The machine goes; its dataset and disks stay unless destroy_disks asks for them too."""
+    section = _section_ready(config)
+    _record(section, name)
+    if _running(engine, name):
+        raise VmError(f"{name} is running: stop it first")
+    engine.execute(CATEGORY, "undefine", name=name, file=_definition_file(engine, section["pool"], name))
+    if destroy_disks:
+        engine.execute(CATEGORY, "dataset_destroy", dataset=f"{dataset_of(section['pool'])}/{name}")
+    records = dict(section["machines"])
+    del records[name]
+    section["machines"] = records
+    config.set_module_config(MODULE_ID, section)
 
 
 def _result(action: str, error: Optional[str] = None) -> ActionResult:
@@ -263,13 +359,10 @@ def reconcile(engine, desired: Dict[str, Any]) -> List[ActionResult]:
     for name, machine in sorted((desired.get("machines") or {}).items()):
         try:
             checked = check_machine(name, machine)
-            if apply_machine(engine, desired["pool"], name, checked):
-                results.append(_result(f"machines.{name}"))
-            else:
-                results.append(ActionResult(
-                    action=f"vm.machines.{name}", params={}, target_state="warning",
-                    error=(f"{name} uses {checked['firmware']} firmware, which this edition does not offer: "
-                           "it is not defined here and its disks are kept")))
+            apply_machine(engine, desired["pool"], name, checked)
+            if checked["state"] == "up" and not _running(engine, name):
+                engine.execute(CATEGORY, "start", name=name)
+            results.append(_result(f"machines.{name}"))
         except Exception as exc:
             results.append(_result(f"machines.{name}", str(exc)))
     return results

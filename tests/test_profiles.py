@@ -9,9 +9,9 @@ from conftest import PROFILES, REPO
 from freedomnas.engine import FreedomNASEngine
 
 EDITIONS = ["arch", "artix", "debian", "freebsd", "gentoo", "void"]
-NOT_COMMANDS = {"backend", "packages", "init_packages", "services", "firmwares", "definition_suffix",
+NOT_COMMANDS = {"backend", "packages", "init_packages", "services", "definition_suffix",
                 "definition_template", "disk_template", "nic_template"}
-VALUES = {"dataset": "tank/vm", "zvol": "tank/vm/a/disk0", "size_gb": 8, "file": "/tank/vm/a/a.conf", "bridge": "br0"}
+VALUES = {"dataset": "tank/vm", "zvol": "tank/vm/a/disk0", "size_gb": 8, "file": "/tank/vm/a/a.conf", "bridge": "br0", "name": "a"}
 
 
 def engine_for(profile_dir, edition):
