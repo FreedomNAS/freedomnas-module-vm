@@ -49,6 +49,11 @@ class FakeEngine:
             raise CommandExecutionError(f"{category}.{action} failed")
         return self.outputs.get((category, action), ""), ""
 
+    def execute_with_stdin(self, category, action, text, **kwargs):
+        self.calls.append((category, action, kwargs))
+        self.stdin = text
+        return "", ""
+
     def actions(self):
         return [f"{c}.{a}" for c, a, _ in self.calls]
 

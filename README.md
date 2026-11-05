@@ -15,7 +15,8 @@ This is the module's skeleton:
   works, and the machines the hypervisor knows about.
 - The reconciler brings all of it back at boot, on any edition.
 
-It cannot create, start or stop a machine yet.
+There is no way yet to add a machine from the WebUI, or to start or stop one:
+machines come from the record in `config.yaml`.
 
 ## What config.yaml holds
 
@@ -25,22 +26,35 @@ It cannot create, start or stop a machine yet.
 vm:
   enabled: true
   pool: tank
+  machines:
+    win:
+      cpus: 2
+      memory_mb: 4096
+      firmware: uefi
+      disks:
+        - size_gb: 60
+      nics:
+        - bridge: fnas_bridge1
 ```
+
+The reconciler turns each machine into the backend's own definition, using the
+templates in the edition's profile: a libvirt domain on Linux, a vm-bhyve
+`.conf` on FreeBSD. Disks are sparse zvols named `<pool>/vm/<machine>/disk<N>`,
+so they travel with the pool. It creates a disk that is missing and never
+resizes or removes one. `bios` firmware exists on Linux only: on FreeBSD such a
+machine stays undefined, with a warning, and its disks are kept.
 
 ## Still to build
 
-1. A neutral machine record (processors, memory, firmware, disks, networks),
-   written out per backend by the reconciler.
-2. Create, start, stop and remove, with one zvol per disk.
-3. The page as a list and a detail, like Proxmox without copying it: the list
+1. Create, start, stop and remove from the API.
+2. The page as a list and a detail, like Proxmox without copying it: the list
    of machines, and for the one selected a second menu with Summary, Console,
    Hardware, Passthrough, Options and Snapshots.
-4. Networks on FreedomNAS's bridges.
-5. The console in the browser: noVNC through a WebSocket of the WebUI that
+3. The console in the browser: noVNC through a WebSocket of the WebUI that
    bridges to the machine's VNC port, which listens on loopback only. It is the
    hardest part and the same on both backends.
-6. An ISO store.
-7. Device passthrough through the IOMMU.
+4. An ISO store.
+5. Device passthrough through the IOMMU.
 
 ## Tests
 

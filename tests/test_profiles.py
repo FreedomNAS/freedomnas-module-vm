@@ -9,7 +9,9 @@ from conftest import PROFILES, REPO
 from freedomnas.engine import FreedomNASEngine
 
 EDITIONS = ["arch", "artix", "debian", "freebsd", "gentoo", "void"]
-NOT_COMMANDS = {"backend", "packages", "init_packages", "services"}
+NOT_COMMANDS = {"backend", "packages", "init_packages", "services", "firmwares", "definition_suffix",
+                "definition_template", "disk_template", "nic_template"}
+VALUES = {"dataset": "tank/vm", "zvol": "tank/vm/a/disk0", "size_gb": 8, "file": "/tank/vm/a/a.conf", "bridge": "br0"}
 
 
 def engine_for(profile_dir, edition):
@@ -40,7 +42,7 @@ def test_every_command_formats(profile_dir, edition):
     commands = [k for k in section(edition) if not k.startswith("_") and k not in NOT_COMMANDS]
     assert "list" in commands and "configure" in commands
     for action in commands:
-        engine.get_command("vm", action, dataset="tank/vm")
+        engine.get_command("vm", action, **VALUES)
 
 
 def test_every_edition_has_the_same_keys():
