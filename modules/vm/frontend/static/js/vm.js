@@ -93,8 +93,15 @@ function stateBadge(m) {
   return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
+function renderConsoleNote() {
+  document.getElementById('console-note').hidden = !_status.console_note;
+  document.getElementById('console-note-text').textContent = _status.console_note || '';
+  document.getElementById('console-note-code').textContent = _status.console_note_code || '';
+}
+
 function renderMachines() {
   const machines = _status.machines;
+  renderConsoleNote();
   const choice = document.getElementById('f-install-iso');
   if (choice) _isoChoice = choice.value;
   if (!machines.some((m) => m.name === _selected)) _selected = machines.length ? machines[0].name : null;

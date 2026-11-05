@@ -224,6 +224,8 @@ def status(engine, config) -> Dict[str, Any]:
         "machines": shown,
         "bridges": bridges(engine),
         "isos": isos(engine, config) if section.get("enabled") else [],
+        "console_note": value(engine, "console_note", ""),
+        "console_note_code": value(engine, "console_note_code", ""),
         "access_group": group or None,
         "access_members": sorted(u["username"] for u in config.get_users()
                                  if group and group in (u.get("groups") or [])),

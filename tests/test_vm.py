@@ -254,6 +254,11 @@ def test_status_gives_the_page_what_it_shows(engine):
     assert win["dataset"] == "tank/vm/win" and win["nics"] == MACHINE["nics"]
 
 
+def test_status_passes_the_console_note_of_the_profile(engine):
+    status = vm.status(engine, ready({"win": MACHINE}))
+    assert "console_note" in status and "console_note_code" in status
+
+
 def test_a_machine_told_to_stop_that_still_runs_is_stopping(engine):
     engine.outputs[("vm", "list")] = "win\trunning\nother\trunning\n"
     records = {"win": MACHINE, "other": {**MACHINE, "state": "up"}}

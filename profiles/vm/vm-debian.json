@@ -2,6 +2,8 @@
   "vm": {
     "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset. definition_template, disk_template and nic_template turn the neutral machine record into the backend's definition. Every edition gives a machine the same hardware: UEFI, virtio disks and networks in the same PCI slots, plain VGA and one serial port. access_group is the system group whose members may use the hypervisor's own tools; empty when there is none.",
     "backend": "libvirt with QEMU/KVM",
+    "console_note": "",
+    "console_note_code": "",
     "packages": [
       "qemu-system-x86",
       "qemu-utils",
