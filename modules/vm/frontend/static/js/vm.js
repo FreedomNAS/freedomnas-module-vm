@@ -23,6 +23,11 @@ async function loadStatus() {
   if (!busy && _poll) { clearInterval(_poll); _poll = null; }
 }
 
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function row(label, value) {
   return `<tr><td class="text-muted" style="padding:5px 0;width:140px">${label}</td><td>${value}</td></tr>`;
 }
