@@ -76,7 +76,15 @@ def test_reconcile_reports_a_pool_that_is_gone(engine):
     assert result.target_state == "failed" and "other" in result.error
 
 
-def test_reconcile_reports_a_hypervisor_that_does_not_answer():
+def test_reconcile_waits_for_a_hypervisor_that_has_just_started(monkeypatch, engine):
+    monkeypatch.setattr(vm.time, "sleep", lambda seconds: None)
+    replies = iter([None, None, []])
+    monkeypatch.setattr(vm, "machines", lambda engine: next(replies))
+    assert vm.reconcile(engine, {"enabled": True, "pool": "tank"}) == []
+
+
+def test_reconcile_reports_a_hypervisor_that_does_not_answer(monkeypatch):
+    monkeypatch.setattr(vm.time, "sleep", lambda seconds: None)
     engine = FakeEngine(failing={("vm", "list")})
     [result] = vm.reconcile(engine, {"enabled": True, "pool": "tank"})
     assert (result.action, result.target_state) == ("vm.hypervisor", "failed")

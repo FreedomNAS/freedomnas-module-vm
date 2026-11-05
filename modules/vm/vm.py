@@ -34,6 +34,7 @@ import logging
 import os
 import re
 import secrets
+import time
 import urllib.parse
 import urllib.request
 import uuid as uuid_module
@@ -103,6 +104,16 @@ def accelerated(engine) -> bool:
         return True
     except Exception:
         return False
+
+
+def answers(engine, seconds: int = 30) -> bool:
+    """Whether the hypervisor answers, giving one that has just started the time to."""
+    for left in range(seconds, 0, -1):
+        if machines(engine) is not None:
+            return True
+        if left > 1:
+            time.sleep(1)
+    return False
 
 
 def machines(engine) -> Optional[List[Dict[str, str]]]:
@@ -508,7 +519,7 @@ def reconcile(engine, desired: Dict[str, Any]) -> List[ActionResult]:
     except Exception as exc:
         results.append(_result("hypervisor", str(exc)))
         return results
-    if machines(engine) is None:
+    if not answers(engine):
         results.append(_result("hypervisor", "The hypervisor does not answer"))
         return results
     for name, machine in sorted((desired.get("machines") or {}).items()):
