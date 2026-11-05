@@ -28,6 +28,7 @@
     "stop": "vm stop {name}",
     "poweroff": "vm poweroff -f {name}",
     "undefine": "rm -f {file}",
-    "access_group": ""
+    "access_group": "",
+    "bridges_list": "ifconfig -g bridge | awk '/^fnas_bridge/'"
   }
 }

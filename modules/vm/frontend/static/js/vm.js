@@ -2,10 +2,20 @@
 
 let _status = null;
 let _poll = null;
+let _selected = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!initShared()) return;
   document.getElementById('form-setup').addEventListener('submit', setupHypervisor);
+  document.getElementById('machines-list').addEventListener('click', onListClick);
+  document.getElementById('detail-body').addEventListener('click', onTabClick);
+  document.getElementById('tab-summary').addEventListener('click', onSummaryClick);
+  document.getElementById('btn-new').addEventListener('click', openNew);
+  document.getElementById('form-new').addEventListener('submit', createMachine);
+  document.getElementById('btn-remove').addEventListener('click', removeMachine);
+  bindModalClose('modal-new');
+  bindModalClose('modal-remove');
+  setInterval(() => { if (_status && _status.enabled && !document.hidden) loadStatus(); }, 5000);
   loadStatus();
 });
 
@@ -57,9 +67,170 @@ function render() {
     select.innerHTML = s.pools.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
   }
   document.getElementById('machines-section').hidden = !s.enabled;
-  document.getElementById('machines-body').innerHTML = s.machines.length
-    ? s.machines.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc(m.state)}</td><td>${esc(m.cpus ?? '')}</td><td>${m.memory_mb ? `${esc(m.memory_mb)} MiB` : ''}</td></tr>`).join('')
-    : '<tr><td colspan="4" class="text-muted">No virtual machines yet.</td></tr>';
+  renderMachines();
+}
+
+const STATES = {
+  running: ['badge-ok', 'Running'],
+  stopped: ['badge-muted', 'Stopped'],
+  undefined: ['badge-err', 'Not defined'],
+};
+
+function stateBadge(m) {
+  if (m.stopping) return '<span class="badge badge-warn">Stopping…</span>';
+  const [cls, label] = STATES[m.state] || ['badge-muted', m.state];
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+function renderMachines() {
+  const machines = _status.machines;
+  if (!machines.some((m) => m.name === _selected)) _selected = machines.length ? machines[0].name : null;
+  document.getElementById('machines-list').innerHTML = machines.length
+    ? machines.map((m) => `<button class="vm-item${m.name === _selected ? ' active' : ''}" data-machine="${esc(m.name)}">
+        <span>${esc(m.name)}</span>${stateBadge(m)}</button>`).join('')
+    : '<p class="text-muted">No virtual machines yet.</p>';
+  renderDetail(machines.find((m) => m.name === _selected));
+}
+
+function renderDetail(m) {
+  document.getElementById('detail-empty').hidden = !!m;
+  document.getElementById('detail-body').hidden = !m;
+  if (!m) return;
+  document.getElementById('detail-name').textContent = m.name;
+  document.getElementById('tab-summary').innerHTML = m.foreign ? foreignSummary(m) : summary(m);
+  document.getElementById('tab-hardware').innerHTML = m.foreign
+    ? '<p class="text-muted">FreedomNAS did not create this machine, so it does not know its hardware.</p>' : hardware(m);
+}
+
+function foreignSummary(m) {
+  return `<table style="width:100%;font-size:0.875rem"><tbody>${row('State', stateBadge(m))}</tbody></table>
+    <p class="form-hint">This machine was not created here. Manage it with the hypervisor's own tools.</p>`;
+}
+
+function summary(m) {
+  const running = m.state === 'running';
+  const total = m.disks.reduce((sum, d) => sum + d.size_gb, 0);
+  const rows = [row('State', stateBadge(m)), row('Processors', esc(m.cpus)), row('Memory', `${esc(m.memory_mb)} MiB`),
+    row('Disks', `${esc(m.disks.length)}, ${esc(total)} GiB`),
+    row('At boot', m.wanted === 'up' ? 'Starts with the NAS' : 'Stays off')];
+  let actions;
+  if (m.stopping) {
+    actions = '<button class="btn btn-danger btn-sm" data-action="poweroff">Power off</button>';
+  } else if (running) {
+    actions = '<button class="btn btn-sm" data-action="stop">Shut down</button>' +
+      '<button class="btn btn-danger btn-sm" data-action="poweroff">Power off</button>';
+  } else {
+    actions = '<button class="btn btn-primary btn-sm" data-action="start">Start</button>' +
+      '<button class="btn btn-danger btn-sm" data-action="remove">Remove</button>';
+  }
+  const hint = m.stopping
+    ? '<p class="form-hint">The guest was asked to shut down and is still running. Some systems ignore the request: Power off cuts it, like pulling the plug.</p>'
+    : '';
+  return `<table style="width:100%;font-size:0.875rem"><tbody>${rows.join('')}</tbody></table>
+    ${hint}<div class="vm-actions">${actions}</div>`;
+}
+
+function hardware(m) {
+  const fixed = [['Firmware', 'UEFI'], ['Video', 'VGA'], ['Input', 'USB tablet'], ['Serial', 'One port'],
+    ['Identity', `<span class="font-mono">${esc(m.uuid)}</span>`]];
+  const disks = m.disks.map((d, i) => `<tr><td>Disk ${i}</td><td>${esc(d.size_gb)} GiB, virtio</td>
+    <td class="font-mono text-sm">${esc(m.dataset)}/disk${i}</td></tr>`).join('');
+  const nics = m.nics.map((n, i) => `<tr><td>Network ${i}</td><td>virtio, on ${esc(n.bridge)}</td>
+    <td class="font-mono text-sm">${esc(n.mac)}</td></tr>`).join('');
+  return `<div class="table-wrap"><table class="table">
+      <thead><tr><th>Device</th><th>Settings</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>Processors</td><td>${esc(m.cpus)}</td><td></td></tr>
+        <tr><td>Memory</td><td>${esc(m.memory_mb)} MiB</td><td></td></tr>
+        ${disks}${nics}
+      </tbody></table></div>
+    <table style="width:100%;font-size:0.875rem;margin-top:12px"><tbody>
+      ${fixed.map(([label, value]) => row(label, value)).join('')}</tbody></table>
+    <p class="form-hint">Every edition gives a machine this same hardware, so it can move with its pool.</p>`;
+}
+
+function onListClick(event) {
+  const item = event.target.closest('[data-machine]');
+  if (!item) return;
+  _selected = item.dataset.machine;
+  renderMachines();
+}
+
+function onTabClick(event) {
+  const tab = event.target.closest('.tab-btn');
+  if (!tab || tab.disabled) return;
+  document.querySelectorAll('#detail-body .tab-btn').forEach((b) => b.classList.toggle('active', b === tab));
+  document.querySelectorAll('#detail-body .tab-panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${tab.dataset.tab}`));
+}
+
+async function onSummaryClick(event) {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  const action = button.dataset.action;
+  if (action === 'remove') {
+    document.getElementById('remove-name').textContent = _selected;
+    document.getElementById('f-destroy').checked = false;
+    openModal('modal-remove');
+    return;
+  }
+  if (action === 'poweroff' && !await confirm(`Power off ${_selected}`,
+    'The machine stops at once, like pulling the plug. What the guest has not saved is lost.', 'Power off')) return;
+  button.disabled = true;
+  try {
+    await apiJSON('POST', `/api/vm/machines/${encodeURIComponent(_selected)}/${action}`);
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  }
+  loadStatus();
+}
+
+function openNew() {
+  const select = document.getElementById('f-bridge');
+  select.innerHTML = '<option value="">No network</option>' +
+    _status.bridges.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  if (_status.bridges.length) select.value = _status.bridges[0];
+  openModal('modal-new');
+}
+
+async function createMachine(event) {
+  event.preventDefault();
+  const name = document.getElementById('f-name').value.trim();
+  const bridge = document.getElementById('f-bridge').value;
+  const btn = document.getElementById('btn-create');
+  setLoading(btn, true, 'Creating…');
+  try {
+    await apiJSON('POST', '/api/vm/machines', {
+      name,
+      cpus: Number(document.getElementById('f-cpus').value),
+      memory_mb: Number(document.getElementById('f-memory').value),
+      disks: [{ size_gb: Number(document.getElementById('f-disk').value) }],
+      nics: bridge ? [{ bridge }] : [],
+    });
+    closeModal('modal-new');
+    event.target.reset();
+    _selected = name;
+    toast(`${name} created.`, 'ok');
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  }
+  setLoading(btn, false);
+  loadStatus();
+}
+
+async function removeMachine() {
+  const destroy = document.getElementById('f-destroy').checked;
+  const btn = document.getElementById('btn-remove');
+  setLoading(btn, true, 'Removing…');
+  try {
+    await apiJSON('DELETE', `/api/vm/machines/${encodeURIComponent(_selected)}?destroy_disks=${destroy}`);
+    closeModal('modal-remove');
+    toast(destroy ? 'The machine and its disks were removed.' : 'The machine was removed, its disks are kept.', 'ok');
+    _selected = null;
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  }
+  setLoading(btn, false);
+  loadStatus();
 }
 
 function renderJob(job) {

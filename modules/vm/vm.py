@@ -114,6 +114,14 @@ def pools(engine) -> List[str]:
     return [line.split("\t")[0] for line in out.splitlines() if line.strip()]
 
 
+def bridges(engine) -> List[str]:
+    try:
+        out, _ = engine.execute(CATEGORY, "bridges_list")
+    except Exception:
+        return []
+    return sorted(out.split())
+
+
 def dataset_of(pool: str) -> str:
     return f"{pool}/{DATASET}"
 
@@ -183,7 +191,10 @@ def status(engine, config) -> Dict[str, Any]:
     listed = machines(engine) if is_installed and section.get("enabled") else None
     records = section.get("machines") or {}
     states = {m["name"]: m["state"] for m in listed or []}
-    shown = [{**record, "name": name, "state": states.get(name, "undefined"), "wanted": record.get("state", "down")}
+    pool = section.get("pool") or ""
+    shown = [{**record, "name": name, "state": states.get(name, "undefined"), "wanted": record.get("state", "down"),
+              "stopping": states.get(name) == "running" and record.get("state", "down") == "down",
+              "dataset": f"{dataset_of(pool)}/{name}"}
              for name, record in sorted(records.items())]
     shown += [{"name": name, "state": state, "foreign": True}
               for name, state in sorted(states.items()) if name not in records]
@@ -196,6 +207,7 @@ def status(engine, config) -> Dict[str, Any]:
         "pool": section.get("pool"),
         "pools": pools(engine),
         "machines": shown,
+        "bridges": bridges(engine),
         "access_group": group or None,
         "access_members": sorted(u["username"] for u in config.get_users()
                                  if group and group in (u.get("groups") or [])),

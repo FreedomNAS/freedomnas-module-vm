@@ -31,13 +31,97 @@
 </div>
 
 <div class="section" id="machines-section" hidden>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:10px">Machines</div>
-    <div class="table-wrap">
-      <table class="table">
-        <thead><tr><th>Name</th><th>State</th><th>Processors</th><th>Memory</th></tr></thead>
-        <tbody id="machines-body"></tbody>
-      </table>
+  <style>
+    .vm-split { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; }
+    .vm-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 10px 12px;
+               background: none; border: 0; border-radius: 8px; color: inherit; cursor: pointer; text-align: left; font: inherit; }
+    .vm-item:hover { background: var(--in-bg); }
+    .vm-item.active { outline: 1px solid var(--accent); }
+    #detail-body .tab-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .vm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    @media (max-width: 800px) { .vm-split { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+  <div class="vm-split">
+    <div class="card">
+      <div class="d-flex" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="card-title">Machines</div>
+        <button class="btn btn-primary btn-sm" id="btn-new">New</button>
+      </div>
+      <div id="machines-list"></div>
+    </div>
+    <div class="card" id="machine-detail">
+      <p class="text-muted" id="detail-empty">Select a machine.</p>
+      <div id="detail-body" hidden>
+        <div class="card-title" id="detail-name" style="margin-bottom:10px"></div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="summary">Summary</button>
+          <button class="tab-btn" data-tab="hardware">Hardware</button>
+          <button class="tab-btn" disabled title="Not available yet">Console</button>
+          <button class="tab-btn" disabled title="Not available yet">Passthrough</button>
+          <button class="tab-btn" disabled title="Not available yet">Options</button>
+          <button class="tab-btn" disabled title="Not available yet">Snapshots</button>
+        </div>
+        <div class="tab-panel active" id="tab-summary"></div>
+        <div class="tab-panel" id="tab-hardware"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-new" class="modal-backdrop" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">New virtual machine</span>
+      <button class="modal-close" data-close aria-label="Close">&times;</button>
+    </div>
+    <form id="form-new">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="f-name">Name</label>
+          <input id="f-name" class="input" required maxlength="31" pattern="[a-z0-9][a-z0-9_\-]*" placeholder="debian">
+          <span class="form-hint">Lowercase letters, digits, - and _.</span>
+        </div>
+        <div class="form-group">
+          <label for="f-cpus">Processors</label>
+          <input id="f-cpus" class="input" type="number" min="1" max="256" value="2" required>
+        </div>
+        <div class="form-group">
+          <label for="f-memory">Memory (MiB)</label>
+          <input id="f-memory" class="input" type="number" min="64" step="64" value="2048" required>
+        </div>
+        <div class="form-group">
+          <label for="f-disk">Disk (GiB)</label>
+          <input id="f-disk" class="input" type="number" min="1" value="32" required>
+          <span class="form-hint">Space is used only as the machine writes to it.</span>
+        </div>
+        <div class="form-group">
+          <label for="f-bridge">Network</label>
+          <select id="f-bridge" class="input"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-create">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-remove" class="modal-backdrop" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Remove <span id="remove-name"></span></span>
+      <button class="modal-close" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p>The machine goes away. Its disks stay on the pool, and a new machine with the same name uses them again.</p>
+      <label style="display:block;margin-top:12px">
+        <input type="checkbox" id="f-destroy"> Also destroy its disks. This cannot be undone.
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="button" class="btn btn-danger" id="btn-remove">Remove</button>
     </div>
   </div>
 </div>

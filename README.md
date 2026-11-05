@@ -19,8 +19,10 @@ This is the module's skeleton:
   first: a session keeps the groups it started with. The WebUI does not need
   this, and FreeBSD has no such group: vm-bhyve is for root only.
 
-The page only shows the machines for now: adding, starting and stopping one
-goes through the API.
+The page has the list of machines, and for the one selected a second menu.
+Summary and Hardware work: create, start, shut down, power off and remove a
+machine there. Console, Passthrough, Options and Snapshots are not there yet, so
+a machine has no way yet to get an operating system from the page.
 
 ## What config.yaml holds
 
@@ -76,9 +78,7 @@ edition, so it must boot through the UEFI fallback path
 
 ## Still to build
 
-1. The page as a list and a detail, like Proxmox without copying it: the list
-   of machines, and for the one selected a second menu with Summary, Console,
-   Hardware, Passthrough, Options and Snapshots.
+1. Editing a machine's hardware.
 2. The console in the browser: noVNC through a WebSocket of the WebUI that
    bridges to the machine's VNC port, which listens on loopback only. It is the
    hardest part and the same on both backends.

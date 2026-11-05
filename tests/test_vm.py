@@ -243,3 +243,20 @@ def test_freebsd_has_no_access_group():
     engine, config = FakeEngine("freebsd"), FakeConfig(users=[{"username": "sarah", "groups": []}])
     vm.setup(engine, config, "tank", "sarah")
     assert "users.add_to_group" not in engine.actions() and vm.status(engine, config)["access_group"] is None
+
+
+def test_status_gives_the_page_what_it_shows(engine):
+    engine.outputs[("vm", "list")] = "win\trunning\n"
+    engine.outputs[("vm", "bridges_list")] = "fnas_bridge1\nbr0\n"
+    status = vm.status(engine, ready({"win": MACHINE}))
+    assert status["bridges"] == ["br0", "fnas_bridge1"]
+    [win] = status["machines"]
+    assert win["dataset"] == "tank/vm/win" and win["nics"] == MACHINE["nics"]
+
+
+def test_a_machine_told_to_stop_that_still_runs_is_stopping(engine):
+    engine.outputs[("vm", "list")] = "win\trunning\nother\trunning\n"
+    records = {"win": MACHINE, "other": {**MACHINE, "state": "up"}}
+    shown = {m["name"]: m for m in vm.status(engine, ready(records))["machines"]}
+    assert shown["win"]["stopping"] is True and shown["win"]["state"] == "running"
+    assert shown["other"]["stopping"] is False

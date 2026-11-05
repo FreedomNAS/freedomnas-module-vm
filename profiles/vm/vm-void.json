@@ -33,6 +33,7 @@
     "stop": "virsh -c qemu:///system shutdown {name}",
     "poweroff": "virsh -c qemu:///system destroy {name}",
     "undefine": "virsh -c qemu:///system undefine --nvram {name}",
-    "access_group": "libvirt"
+    "access_group": "libvirt",
+    "bridges_list": "ls -d /sys/class/net/*/bridge 2>/dev/null | awk -F/ '$5 ~ /^fnas_bridge/ {{print $5}}'"
   }
 }
