@@ -10,8 +10,8 @@ from freedomnas.engine import FreedomNASEngine
 
 EDITIONS = ["arch", "artix", "debian", "freebsd", "gentoo", "void"]
 NOT_COMMANDS = {"access_group", "backend", "packages", "init_packages", "services", "definition_suffix",
-                "definition_template", "disk_template", "nic_template"}
-VALUES = {"dataset": "tank/vm", "zvol": "tank/vm/a/disk0", "size_gb": 8, "file": "/tank/vm/a/a.conf", "bridge": "br0", "name": "a"}
+                "definition_template", "disk_template", "nic_template", "cdrom_template"}
+VALUES = {"dataset": "tank/vm", "zvol": "tank/vm/a/disk0", "size_gb": 8, "file": "/tank/vm/a/a.conf", "bridge": "br0", "name": "a", "iso": "a.iso", "path": "/p"}
 
 
 def engine_for(profile_dir, edition):

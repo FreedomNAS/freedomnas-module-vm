@@ -260,3 +260,110 @@ def test_a_machine_told_to_stop_that_still_runs_is_stopping(engine):
     shown = {m["name"]: m for m in vm.status(engine, ready(records))["machines"]}
     assert shown["win"]["stopping"] is True and shown["win"]["state"] == "running"
     assert shown["other"]["stopping"] is False
+
+
+@pytest.fixture
+def store(tmp_path):
+    (tmp_path / ".iso").mkdir()
+    engine = FakeEngine()
+    engine.outputs[("vm", "dataset_mountpoint")] = str(tmp_path) + "\n"
+    return engine, tmp_path / ".iso"
+
+
+@pytest.mark.parametrize("given, clean", [
+    ("debian 13 (netinst).ISO", "debian-13-netinst-.ISO"), ("/x/y/alpine.iso", "alpine.iso"), ("../../etc/a.iso", "a.iso"),
+])
+def test_an_image_name_is_made_safe(given, clean):
+    assert vm.clean_iso_name(given) == clean
+
+
+@pytest.mark.parametrize("given", ["", "a.txt", "..iso", "a.iso.sh"])
+def test_only_iso_files_are_images(given):
+    with pytest.raises(vm.VmError):
+        vm.clean_iso_name(given)
+
+
+def test_images_are_listed_without_unfinished_ones(store):
+    engine, folder = store
+    (folder / "b.iso").write_bytes(b"12")
+    (folder / "a.iso").write_bytes(b"1")
+    (folder / "c.iso.part").write_bytes(b"123")
+    assert vm.isos(engine, ready()) == [{"name": "a.iso", "size": 1}, {"name": "b.iso", "size": 2}]
+
+
+def test_an_image_is_not_overwritten_and_removal_stays_in_the_folder(store):
+    engine, folder = store
+    (folder / "a.iso").write_bytes(b"1")
+    config = ready()
+    with pytest.raises(vm.VmError):
+        vm.iso_target(engine, config, "a.iso")
+    with pytest.raises(vm.VmError):
+        vm.remove_iso(engine, config, "../a.iso")
+    vm.remove_iso(engine, config, "a.iso")
+    assert not (folder / "a.iso").exists()
+
+
+@pytest.mark.parametrize("url", ["ftp://x/a.iso", "file:///etc/a.iso", "a.iso", ""])
+def test_an_image_comes_only_from_http(store, url):
+    with pytest.raises(vm.VmError):
+        vm.download_iso(store[0], ready(), url)
+
+
+def test_starting_from_an_image_is_only_this_once(store):
+    engine, folder = store
+    (folder / "a.iso").write_bytes(b"1")
+    config = ready({"win": MACHINE})
+    vm.install_machine(engine, config, "win", "a.iso")
+    writes = [c for c in engine.calls if c[1] == "definition_write"]
+    assert len(writes) == 2 and "a.iso" not in engine.stdin
+    assert ("vm", "install", {"name": "win", "iso": "a.iso"}) in engine.calls
+    assert config.get_module_config("vm")["machines"]["win"]["state"] == "up"
+    assert "iso" not in config.get_module_config("vm")["machines"]["win"]
+
+
+def test_libvirt_boots_the_image_first_and_the_disks_after():
+    root = ElementTree.fromstring(vm.definition(FakeEngine("debian"), "tank", "win", MACHINE, "/tank/vm/.iso/a.iso"))
+    cdrom, *disks = list(root.iter("disk"))
+    assert cdrom.get("device") == "cdrom" and cdrom.find("source").get("file") == "/tank/vm/.iso/a.iso"
+    assert [d.find("boot").get("order") for d in [cdrom, *disks]] == ["1", "2", "3"]
+    assert [d.find("address").get("slot") for d in disks] == ["0x04", "0x05"]
+    assert not list(ElementTree.fromstring(vm.definition(FakeEngine("debian"), "tank", "win", MACHINE)).iter("readonly"))
+
+
+def test_bhyve_conf_never_carries_the_image():
+    assert "a.iso" not in vm.definition(FakeEngine("freebsd"), "tank", "win", MACHINE, "/tank/vm/.iso/a.iso")
+
+
+@pytest.mark.parametrize("change", [{"name": "ghost"}, {"iso": "none.iso"}, {"iso": "../a.iso"}, {"iso": None}])
+def test_a_bad_start_from_an_image_is_refused(store, change):
+    engine, folder = store
+    (folder / "a.iso").write_bytes(b"1")
+    asked = {"name": "win", "iso": "a.iso", **change}
+    with pytest.raises(vm.VmError):
+        vm.install_machine(engine, ready({"win": MACHINE}), asked["name"], asked["iso"])
+    assert "vm.install" not in engine.actions()
+
+
+def test_a_running_machine_is_not_started_from_an_image(store):
+    engine, folder = store
+    (folder / "a.iso").write_bytes(b"1")
+    engine.outputs[("vm", "list")] = "win\trunning\n"
+    with pytest.raises(vm.VmError):
+        vm.install_machine(engine, ready({"win": MACHINE}), "win", "a.iso")
+
+
+def test_the_console_only_reaches_loopback(engine):
+    config = ready({"win": MACHINE})
+    engine.outputs[("vm", "list")] = "win\trunning\n"
+    engine.outputs[("vm", "vnc_address")] = "127.0.0.1:5901\n"
+    assert vm.console_port(engine, config, "win") == 5901
+    engine.outputs[("vm", "vnc_address")] = "192.168.1.9:5901\n"
+    with pytest.raises(vm.VmError):
+        vm.console_port(engine, config, "win")
+
+
+def test_a_stopped_or_unknown_machine_has_no_console(engine):
+    with pytest.raises(vm.VmError):
+        vm.console_port(engine, ready({"win": MACHINE}), "win")
+    with pytest.raises(vm.VmError):
+        vm.console_port(engine, ready(), "other")

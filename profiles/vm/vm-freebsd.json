@@ -1,6 +1,6 @@
 {
   "vm": {
-    "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset. definition_template, disk_template and nic_template turn the neutral machine record into the backend's definition. Every edition gives a machine the same hardware: UEFI, virtio disks and networks in the same PCI slots, plain VGA and one serial port. access_group is the system group whose members may use the hypervisor's own tools; empty when there is none.",
+    "_note": "The hypervisor of the virtual machines module. list prints one <name><TAB>running|stopped per machine and fails when the hypervisor does not answer; configure tells it about the <pool>/vm dataset. definition_template, disk_template and nic_template turn the neutral machine record into the backend's definition. Every edition gives a machine the same hardware: UEFI, virtio disks and networks in the same PCI slots, plain VGA and one serial port. access_group is the system group whose members may use the hypervisor's own tools; empty when there is none. On FreeBSD a machine that started from an image shows as Locked until the console connects: it waits for it, and it has a VNC port. bridge_ensure keeps a permanent tap (vmhold<N>) in the bridge: without it, every machine's tap joining or leaving changes the capabilities the bridge imposes on the network card, some cards reinitialise, and the NAS loses the network for seconds. poweroff also ends a machine waiting for its console, which vm poweroff does not reach.",
     "backend": "bhyve with vm-bhyve",
     "packages": [
       "vm-bhyve",
@@ -13,7 +13,7 @@
     "accel_check": "kldload -n vmm && {{ [ \"$(sysctl -n hw.vmm.vmx.initialized 2>/dev/null)\" = 1 ] || sysctl -n hw.vmm.svm.features >/dev/null 2>&1; }}",
     "dataset_ensure": "zfs list -H -o name {dataset} >/dev/null 2>&1 || zfs create {dataset}",
     "configure": "sysrc vm_enable=YES vm_dir=zfs:{dataset} && vm init",
-    "list": "out=$(vm list) && printf '%s\\n' \"$out\" | awk 'NR>1 && NF {{ print $1 \"\\t\" (/Running/ ? \"running\" : \"stopped\") }}'",
+    "list": "out=$(vm list) && printf '%s\\n' \"$out\" | awk 'NR>1 && NF {{ print $1 \"\\t\" ((/Running/ || (/Locked/ && $6 != \"-\")) ? \"running\" : \"stopped\") }}'",
     "disk_ensure": "zfs list -H -o name {zvol} >/dev/null 2>&1 || zfs create -s -V {size_gb}G {zvol}",
     "dataset_mountpoint": "zfs get -H -o value mountpoint {dataset}",
     "definition_write": "sh -c 'umask 077 && cat > \"$1.new\" && mv \"$1.new\" \"$1\"' definition_write {file}",
@@ -21,14 +21,18 @@
     "definition_template": "loader=\"uefi\"\nuuid=\"{uuid}\"\ncpu={cpus}\nmemory={memory_mb}M\ngraphics=\"yes\"\ngraphics_listen=\"127.0.0.1\"\nxhci_mouse=\"yes\"\n{disks}{nics}",
     "disk_template": "disk{index}_type=\"virtio-blk\"\ndisk{index}_name=\"disk{index}\"\ndisk{index}_dev=\"sparse-zvol\"\n",
     "nic_template": "network{index}_type=\"virtio-net\"\nnetwork{index}_switch=\"{bridge}\"\nnetwork{index}_mac=\"{mac}\"\n",
-    "bridge_ensure": "vm switch list | awk '{{print $1}}' | grep -qx {bridge} || vm switch create -t manual -b {bridge} {bridge}",
+    "bridge_ensure": "b={bridge}; h=vmhold${{b##*bridge}}; vm switch list | awk '{{print $1}}' | grep -qx $b || vm switch create -t manual -b $b $b; ifconfig $h >/dev/null 2>&1 || {{ t=$(ifconfig tap create) && ifconfig $t name $h >/dev/null && ifconfig $h up && ifconfig $b addm $h; }}",
     "define": "test -s {file}",
     "dataset_destroy": "zfs destroy -r {dataset}",
     "start": "vm start {name}",
     "stop": "vm stop {name}",
-    "poweroff": "vm poweroff -f {name}",
+    "poweroff": "vm poweroff -f {name}; sleep 1; pkill -f '^bhyve .* {name}$'; true",
     "undefine": "rm -f {file}",
     "access_group": "",
-    "bridges_list": "ifconfig -g bridge | awk '/^fnas_bridge/'"
+    "bridges_list": "ifconfig -g bridge | awk '/^fnas_bridge/'",
+    "dir_ensure": "mkdir -p {path}",
+    "cdrom_template": "",
+    "install": "vm install {name} {iso}",
+    "vnc_address": "vm list | awk '$1 == \"{name}\" {{print $6}}'"
   }
 }

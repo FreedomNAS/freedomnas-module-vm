@@ -10,6 +10,10 @@ config.yaml (modules.vm) holds what was asked for, never how a backend does it:
 "machines": {name: {"cpus", "memory_mb", "state": "up"|"down", "uuid",
              "disks": [{"size_gb"}], "nics": [{"bridge", "mac"}]}}.
 
+Install images live in <pool>/vm/.iso, a folder that travels with the pool. A
+machine starts from one once, with `install_machine`: the record does not keep
+it, and the image is left out of the definition again as soon as it has started.
+
 A machine has the same hardware on every edition, so its guest can move with
 the pool: UEFI, raw disks and networks on virtio, plain VGA, one serial port,
 and the same PCI slots (disks from slot 4, then networks). Its uuid and MAC
@@ -27,9 +31,13 @@ answer.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import secrets
+import urllib.parse
+import urllib.request
 import uuid as uuid_module
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
@@ -48,6 +56,11 @@ _BRIDGE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,14}")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _MAC = re.compile(r"52:54:00(:[0-9a-f]{2}){3}")
 STATES = ("up", "down")
+ISO_FOLDER = ".iso"
+_ISO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.iso", re.IGNORECASE)
+_VNC = re.compile(r"127\.0\.0\.1:(\d{1,5})")
+PART = ".part"
+CHUNK = 1024 * 1024
 FIRST_SLOT = 4
 MAX_CPUS = 256
 MAX_MEMORY_MB = 16 * 1024 * 1024
@@ -139,6 +152,8 @@ def prepare(engine, pool: str) -> None:
     """The dataset of the virtual machines, the hypervisor told about it and started."""
     engine.execute(CATEGORY, "dataset_ensure", dataset=dataset_of(pool))
     engine.execute(CATEGORY, "configure", dataset=dataset_of(pool))
+    out, _ = engine.execute(CATEGORY, "dataset_mountpoint", dataset=dataset_of(pool))
+    engine.execute(CATEGORY, "dir_ensure", path=f"{out.strip()}/{ISO_FOLDER}")
     for name in value(engine, "services", []):
         engine.execute("services", "enable", service_name=name)
         out, _ = engine.execute("services", "is_running", check=False, service_name=name)
@@ -208,6 +223,7 @@ def status(engine, config) -> Dict[str, Any]:
         "pools": pools(engine),
         "machines": shown,
         "bridges": bridges(engine),
+        "isos": isos(engine, config) if section.get("enabled") else [],
         "access_group": group or None,
         "access_members": sorted(u["username"] for u in config.get_users()
                                  if group and group in (u.get("groups") or [])),
@@ -268,20 +284,21 @@ def new_machine(name: Any, settings: Any) -> Dict[str, Any]:
     })
 
 
-def definition(engine, pool: str, name: str, machine: Dict[str, Any]) -> str:
-    """The backend's definition of a machine, with the same hardware on every edition."""
+def definition(engine, pool: str, name: str, machine: Dict[str, Any], iso: Optional[str] = None) -> str:
+    """The backend's definition of a machine, with the same hardware on every edition; iso boots first."""
     base = f"{dataset_of(pool)}/{name}"
     count = len(machine["disks"])
     disks = "".join(
         value(engine, "disk_template").format(index=index, letter=chr(ord("a") + index), zvol=f"{base}/disk{index}",
-                                              slot=FIRST_SLOT + index)
+                                              slot=FIRST_SLOT + index, boot=index + 2)
         for index in range(count))
     nics = "".join(
         value(engine, "nic_template").format(index=index, bridge=nic["bridge"], mac=nic["mac"],
                                              slot=FIRST_SLOT + count + index)
         for index, nic in enumerate(machine["nics"]))
     return value(engine, "definition_template").format(
-        name=name, uuid=machine["uuid"], cpus=machine["cpus"], memory_mb=machine["memory_mb"], disks=disks, nics=nics)
+        name=name, uuid=machine["uuid"], cpus=machine["cpus"], memory_mb=machine["memory_mb"], disks=disks, nics=nics,
+        cdrom=value(engine, "cdrom_template").format(path=iso) if iso else "")
 
 
 def _definition_file(engine, pool: str, name: str) -> str:
@@ -289,7 +306,7 @@ def _definition_file(engine, pool: str, name: str) -> str:
     return f"{out.strip()}/{name}.{value(engine, 'definition_suffix')}"
 
 
-def apply_machine(engine, pool: str, name: str, machine: Dict[str, Any]) -> None:
+def apply_machine(engine, pool: str, name: str, machine: Dict[str, Any], iso: Optional[str] = None) -> None:
     """A machine's dataset, missing disks and definition."""
     base = f"{dataset_of(pool)}/{name}"
     engine.execute(CATEGORY, "dataset_ensure", dataset=base)
@@ -298,7 +315,7 @@ def apply_machine(engine, pool: str, name: str, machine: Dict[str, Any]) -> None
     for nic in machine["nics"]:
         engine.execute(CATEGORY, "bridge_ensure", bridge=nic["bridge"])
     file = _definition_file(engine, pool, name)
-    engine.execute_with_stdin(CATEGORY, "definition_write", definition(engine, pool, name, machine), file=file)
+    engine.execute_with_stdin(CATEGORY, "definition_write", definition(engine, pool, name, machine, iso), file=file)
     engine.execute(CATEGORY, "define", file=file)
 
 
@@ -343,6 +360,102 @@ def machine_action(engine, config, name: str, action: str) -> None:
     machine["state"] = "up" if action == "start" else "down"
     section["machines"] = {**section["machines"], name: machine}
     config.set_module_config(MODULE_ID, section)
+
+
+def iso_folder(engine, config) -> Path:
+    section = _section_ready(config)
+    out, _ = engine.execute(CATEGORY, "dataset_mountpoint", dataset=dataset_of(section["pool"]))
+    return Path(out.strip()) / ISO_FOLDER
+
+
+def clean_iso_name(name: Any) -> str:
+    """A file name safe in every backend's definition, from what a browser or URL calls it."""
+    text = re.sub(r"[^A-Za-z0-9._+-]+", "-", os.path.basename(str(name or ""))).strip("-.")
+    if not _ISO.fullmatch(text):
+        raise VmError("An install image is a file whose name ends in .iso")
+    return text
+
+
+def isos(engine, config) -> List[Dict[str, Any]]:
+    try:
+        folder = iso_folder(engine, config)
+        return sorted(({"name": entry.name, "size": entry.stat().st_size} for entry in os.scandir(folder)
+                       if entry.is_file() and _ISO.fullmatch(entry.name)), key=lambda item: item["name"].lower())
+    except (OSError, KeyError, VmError):
+        return []
+
+
+def iso_target(engine, config, name: Any) -> Path:
+    """Where a new image goes; a name in use is refused, so nothing is overwritten by accident."""
+    clean = clean_iso_name(name)
+    target = iso_folder(engine, config) / clean
+    if target.exists():
+        raise VmError(f"There is already an image named {clean}")
+    return target
+
+
+def download_target(engine, config, url: Any, name: Any = None) -> Path:
+    text = str(url or "").strip()
+    parts = urllib.parse.urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise VmError("The address of an image starts with http:// or https://")
+    return iso_target(engine, config, name or urllib.parse.unquote(parts.path))
+
+
+def download_iso(engine, config, url: Any, name: Any = None) -> None:
+    text = str(url or "").strip()
+    target = download_target(engine, config, text, name)
+    part = target.with_name(target.name + PART)
+    request = urllib.request.Request(text, headers={"User-Agent": "FreedomNAS"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response, part.open("wb") as out:
+            while chunk := response.read(CHUNK):
+                out.write(chunk)
+        part.rename(target)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def remove_iso(engine, config, name: str) -> None:
+    if not _ISO.fullmatch(str(name or "")):
+        raise VmError("An install image is a file whose name ends in .iso")
+    path = iso_folder(engine, config) / name
+    if not path.is_file():
+        raise VmError(f"No image named {name}")
+    path.unlink()
+
+
+def install_machine(engine, config, name: str, iso: Any) -> None:
+    """Start a stopped machine from an image, this once."""
+    section = _section_ready(config)
+    machine = check_machine(name, _record(section, name))
+    if not _ISO.fullmatch(str(iso or "")):
+        raise VmError("Choose the image to start from")
+    path = iso_folder(engine, config) / iso
+    if not path.is_file():
+        raise VmError(f"No image named {iso}")
+    if _running(engine, name):
+        raise VmError(f"{name} is running: stop it first")
+    apply_machine(engine, section["pool"], name, machine, str(path))
+    try:
+        engine.execute(CATEGORY, "install", name=name, iso=iso)
+    finally:
+        apply_machine(engine, section["pool"], name, machine)
+    machine["state"] = "up"
+    section["machines"] = {**section["machines"], name: machine}
+    config.set_module_config(MODULE_ID, section)
+
+
+def console_port(engine, config, name: str) -> int:
+    """The machine's VNC port, on loopback only, or VmError."""
+    _record(_section_ready(config), name)
+    if not _running(engine, name):
+        raise VmError(f"{name} is not running")
+    out, _ = engine.execute(CATEGORY, "vnc_address", name=name)
+    match = _VNC.fullmatch(out.strip())
+    if not match:
+        raise VmError(f"{name} has no console yet")
+    return int(match.group(1))
 
 
 def remove_machine(engine, config, name: str, destroy_disks: bool = False) -> None:

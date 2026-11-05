@@ -3,6 +3,9 @@
 let _status = null;
 let _poll = null;
 let _selected = null;
+let _isoChoice = '';
+let _rfb = null;
+let _socket = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!initShared()) return;
@@ -13,6 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-new').addEventListener('click', openNew);
   document.getElementById('form-new').addEventListener('submit', createMachine);
   document.getElementById('btn-remove').addEventListener('click', removeMachine);
+  document.getElementById('f-iso-file').addEventListener('change', uploadIso);
+  document.getElementById('form-iso-url').addEventListener('submit', fetchIso);
+  document.getElementById('isos-body').addEventListener('click', onIsoClick);
+  document.getElementById('btn-console').addEventListener('click', toggleConsole);
+  document.getElementById('btn-cad').addEventListener('click', () => { if (_rfb) _rfb.sendCtrlAltDel(); });
+  document.getElementById('btn-fullscreen').addEventListener('click', () => document.getElementById('console-screen').requestFullscreen());
   bindModalClose('modal-new');
   bindModalClose('modal-remove');
   setInterval(() => { if (_status && _status.enabled && !document.hidden) loadStatus(); }, 5000);
@@ -67,7 +76,9 @@ function render() {
     select.innerHTML = s.pools.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
   }
   document.getElementById('machines-section').hidden = !s.enabled;
+  document.getElementById('isos-section').hidden = !s.enabled;
   renderMachines();
+  renderIsos();
 }
 
 const STATES = {
@@ -84,6 +95,8 @@ function stateBadge(m) {
 
 function renderMachines() {
   const machines = _status.machines;
+  const choice = document.getElementById('f-install-iso');
+  if (choice) _isoChoice = choice.value;
   if (!machines.some((m) => m.name === _selected)) _selected = machines.length ? machines[0].name : null;
   document.getElementById('machines-list').innerHTML = machines.length
     ? machines.map((m) => `<button class="vm-item${m.name === _selected ? ' active' : ''}" data-machine="${esc(m.name)}">
@@ -120,7 +133,10 @@ function summary(m) {
     actions = '<button class="btn btn-sm" data-action="stop">Shut down</button>' +
       '<button class="btn btn-danger btn-sm" data-action="poweroff">Power off</button>';
   } else {
+    const images = _status.isos.map((i) => `<option value="${esc(i.name)}"${i.name === _isoChoice ? ' selected' : ''}>${esc(i.name)}</option>`).join('');
     actions = '<button class="btn btn-primary btn-sm" data-action="start">Start</button>' +
+      (images ? `<select class="input" id="f-install-iso" style="max-width:260px;height:32px;padding:2px 8px">${images}</select>
+        <button class="btn btn-sm" data-action="install">Start from image</button>` : '') +
       '<button class="btn btn-danger btn-sm" data-action="remove">Remove</button>';
   }
   const hint = m.stopping
@@ -152,6 +168,7 @@ function hardware(m) {
 function onListClick(event) {
   const item = event.target.closest('[data-machine]');
   if (!item) return;
+  if (item.dataset.machine !== _selected) closeConsole();
   _selected = item.dataset.machine;
   renderMachines();
 }
@@ -167,6 +184,19 @@ async function onSummaryClick(event) {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
+  if (action === 'install') {
+    button.disabled = true;
+    try {
+      await apiJSON('POST', `/api/vm/machines/${encodeURIComponent(_selected)}/install`, { iso: document.getElementById('f-install-iso').value });
+      toast('Started from the image, this once. Open the console to go on.', 'ok');
+      document.querySelector('#detail-body [data-tab=console]').click();
+      setTimeout(() => { if (!_rfb) toggleConsole(); }, 1500);
+    } catch (e) {
+      toast(`Error: ${e.message}`, 'err');
+    }
+    loadStatus();
+    return;
+  }
   if (action === 'remove') {
     document.getElementById('remove-name').textContent = _selected;
     document.getElementById('f-destroy').checked = false;
@@ -234,16 +264,116 @@ async function removeMachine() {
 }
 
 function renderJob(job) {
-  const line = document.getElementById('job-line');
+  const line = document.getElementById(job.kind === 'download' ? 'iso-line' : 'job-line');
+  const word = job.kind === 'download' ? 'Fetching the image failed' : 'Set up failed';
   if (job.state === 'running') {
-    line.textContent = 'Setting up the hypervisor… (the packages can take some minutes)';
+    line.textContent = job.kind === 'download' ? 'Fetching the image…'
+      : 'Setting up the hypervisor… (the packages can take some minutes)';
   } else if (job.state === 'failed') {
-    line.textContent = `Set up failed: ${job.error || ''}`;
+    line.textContent = `${word}: ${job.error || ''}`;
   } else {
     line.hidden = true;
     return;
   }
   line.hidden = false;
+}
+
+function formatSize(bytes) {
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+}
+
+function renderIsos() {
+  document.getElementById('isos-body').innerHTML = _status.isos.length
+    ? _status.isos.map((i) => `<tr><td class="font-mono text-sm">${esc(i.name)}</td><td>${formatSize(i.size)}</td>
+        <td style="text-align:right"><button class="btn btn-danger btn-sm" data-iso="${esc(i.name)}">Remove</button></td></tr>`).join('')
+    : '<tr><td colspan="3" class="text-muted">No install images yet.</td></tr>';
+}
+
+function uploadIso(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const line = document.getElementById('iso-line');
+  line.hidden = false;
+  const request = new XMLHttpRequest();
+  request.open('POST', `/api/vm/isos?name=${encodeURIComponent(file.name)}`);
+  request.setRequestHeader('Authorization', `Basic ${Auth.get()}`);
+  request.upload.onprogress = (e) => { line.textContent = `Uploading ${file.name}: ${Math.round(100 * e.loaded / e.total)}%`; };
+  request.onload = () => {
+    let detail = '';
+    try { detail = JSON.parse(request.responseText).detail || ''; } catch (e) { detail = ''; }
+    line.textContent = request.status === 200 ? `${file.name} uploaded.` : `Upload failed: ${detail || request.status}`;
+    event.target.value = '';
+    loadStatus();
+  };
+  request.onerror = () => { line.textContent = 'Upload failed: the connection dropped.'; event.target.value = ''; };
+  request.send(file);
+}
+
+async function fetchIso(event) {
+  event.preventDefault();
+  const field = document.getElementById('f-iso-url');
+  try {
+    await apiJSON('POST', '/api/vm/isos/download', { url: field.value.trim() });
+    field.value = '';
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  }
+  loadStatus();
+  if (!_poll) _poll = setInterval(loadStatus, 3000);
+}
+
+async function onIsoClick(event) {
+  const button = event.target.closest('[data-iso]');
+  if (!button) return;
+  const name = button.dataset.iso;
+  if (!await confirm(`Remove ${name}`, 'The image file is deleted from the pool.', 'Remove')) return;
+  try {
+    await apiJSON('DELETE', `/api/vm/isos/${encodeURIComponent(name)}`);
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  }
+  loadStatus();
+}
+
+function consoleButtons(connected) {
+  document.getElementById('btn-console').textContent = connected ? 'Disconnect' : 'Connect';
+  document.getElementById('btn-cad').hidden = !connected;
+  document.getElementById('btn-fullscreen').hidden = !connected;
+  document.getElementById('console-screen').hidden = !connected;
+}
+
+function closeConsole() {
+  if (_rfb) { _rfb.disconnect(); _rfb = null; }
+  consoleButtons(false);
+}
+
+function toggleConsole() {
+  if (_rfb || _socket) { closeConsole(); return; }
+  const line = document.getElementById('console-line');
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${scheme}://${location.host}/api/vm/machines/${encodeURIComponent(_selected)}/console`);
+  socket.binaryType = 'arraybuffer';
+  _socket = socket;
+  line.textContent = 'Connecting…';
+  socket.onopen = () => socket.send(JSON.stringify({ auth: Auth.get() }));
+  socket.onclose = () => { _socket = null; if (!_rfb) line.textContent = line.textContent === 'Connecting…' ? 'The console did not answer.' : line.textContent; };
+  socket.onmessage = (event) => {
+    let answer = {};
+    try { answer = JSON.parse(event.data); } catch (e) { answer = {}; }
+    if (!answer.ok) { line.textContent = answer.error || 'The console did not answer.'; return; }
+    socket.onmessage = null;
+    socket.onclose = null;
+    _socket = null;
+    consoleButtons(true);
+    const rfb = new window.NoVncRFB(document.getElementById('console-screen'), socket);
+    rfb.scaleViewport = true;
+    rfb.addEventListener('connect', () => { line.textContent = 'Connected.'; rfb.focus(); });
+    rfb.addEventListener('disconnect', () => {
+      if (_rfb === rfb) { _rfb = null; consoleButtons(false); }
+      line.textContent = 'Disconnected.';
+    });
+    _rfb = rfb;
+  };
 }
 
 async function setupHypervisor(event) {

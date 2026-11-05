@@ -20,9 +20,9 @@ This is the module's skeleton:
   this, and FreeBSD has no such group: vm-bhyve is for root only.
 
 The page has the list of machines, and for the one selected a second menu.
-Summary and Hardware work: create, start, shut down, power off and remove a
-machine there. Console, Passthrough, Options and Snapshots are not there yet, so
-a machine has no way yet to get an operating system from the page.
+Summary, Hardware and Console work: create, start, shut down, power off and remove
+a machine, start it from an install image, and use its screen in the browser.
+Passthrough, Options and Snapshots are not there yet.
 
 ## What config.yaml holds
 
@@ -79,11 +79,28 @@ edition, so it must boot through the UEFI fallback path
 ## Still to build
 
 1. Editing a machine's hardware.
-2. The console in the browser: noVNC through a WebSocket of the WebUI that
-   bridges to the machine's VNC port, which listens on loopback only. It is the
-   hardest part and the same on both backends.
-3. An ISO store.
-4. Device passthrough through the IOMMU.
+2. Device passthrough through the IOMMU.
+3. A second image at once, for the virtio drivers Windows needs while installing.
+
+## Console and install images
+
+Install images are in `<pool>/vm/.iso`: uploaded, or fetched from an address by
+the NAS. A machine starts from one once: the record does not keep it. On FreeBSD
+such a start waits for the console to connect, so an installer's first prompt is
+not missed; the page connects by itself.
+
+The console is noVNC in the browser, through a WebSocket of the WebUI that first
+asks for the credentials and then bridges to the machine's VNC port. That port
+listens on loopback only, so nothing is opened on the network. noVNC's core is
+bundled in `modules/vm/frontend/static/novnc`, under the MPL-2.0, with its license.
+
+## Network on FreeBSD
+
+The module keeps a permanent tap, `vmhold<N>`, in each bridge machines use. Without
+it, every machine's tap joining or leaving changes the capabilities the bridge
+imposes on the network card, some cards reinitialise, and the NAS loses the network
+for seconds, up to half a minute on the test box's Realtek. With it, starts and
+stops lose no packets.
 
 ## Tests
 

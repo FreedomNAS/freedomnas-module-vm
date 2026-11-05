@@ -3,6 +3,10 @@ Upstream-Name: freedomnas-module-vm
 Upstream-Contact: FreedomNAS Team <dev@freedomnas.io>
 Source: https://codeberg.org/FreedomNAS/freedomnas-module-vm
 
+Files: modules/vm/frontend/static/novnc/*
+Copyright: The noVNC authors
+License: MPL-2.0
+
 Files: *
 Copyright: 2026 FreedomNAS Team
 License: MPL-2.0

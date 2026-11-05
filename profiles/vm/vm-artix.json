@@ -34,8 +34,8 @@
     "dataset_mountpoint": "zfs get -H -o value mountpoint {dataset}",
     "definition_write": "sh -c 'umask 077 && cat > \"$1.new\" && mv \"$1.new\" \"$1\"' definition_write {file}",
     "definition_suffix": "xml",
-    "definition_template": "<domain type='kvm'>\n  <name>{name}</name>\n  <uuid>{uuid}</uuid>\n  <memory unit='MiB'>{memory_mb}</memory>\n  <vcpu>{cpus}</vcpu>\n  <cpu mode='host-passthrough'/>\n  <os firmware='efi'>\n    <type arch='x86_64' machine='pc'>hvm</type>\n    <boot dev='hd'/>\n    <boot dev='cdrom'/>\n  </os>\n  <features>\n    <acpi/>\n    <apic/>\n  </features>\n  <devices>\n{disks}{nics}    <controller type='usb' model='qemu-xhci'/>\n    <input type='tablet' bus='usb'/>\n    <serial type='pty'/>\n    <console type='pty'/>\n    <graphics type='vnc' autoport='yes' listen='127.0.0.1'/>\n    <video>\n      <model type='vga'/>\n    </video>\n    <memballoon model='none'/>\n  </devices>\n</domain>\n",
-    "disk_template": "    <disk type='block' device='disk'>\n      <driver name='qemu' type='raw' cache='none' io='native'/>\n      <source dev='/dev/zvol/{zvol}'/>\n      <target dev='vd{letter}' bus='virtio'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='{slot:#04x}' function='0x0'/>\n    </disk>\n",
+    "definition_template": "<domain type='kvm'>\n  <name>{name}</name>\n  <uuid>{uuid}</uuid>\n  <memory unit='MiB'>{memory_mb}</memory>\n  <vcpu>{cpus}</vcpu>\n  <cpu mode='host-passthrough'/>\n  <os firmware='efi'>\n    <type arch='x86_64' machine='pc'>hvm</type>\n  </os>\n  <features>\n    <acpi/>\n    <apic/>\n  </features>\n  <devices>\n{cdrom}{disks}{nics}    <controller type='usb' model='qemu-xhci'/>\n    <input type='tablet' bus='usb'/>\n    <serial type='pty'/>\n    <console type='pty'/>\n    <graphics type='vnc' autoport='yes' listen='127.0.0.1'/>\n    <video>\n      <model type='vga'/>\n    </video>\n    <memballoon model='none'/>\n  </devices>\n</domain>\n",
+    "disk_template": "    <disk type='block' device='disk'>\n      <driver name='qemu' type='raw' cache='none' io='native'/>\n      <source dev='/dev/zvol/{zvol}'/>\n      <target dev='vd{letter}' bus='virtio'/>\n      <boot order='{boot}'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='{slot:#04x}' function='0x0'/>\n    </disk>\n",
     "nic_template": "    <interface type='bridge'>\n      <mac address='{mac}'/>\n      <source bridge='{bridge}'/>\n      <model type='virtio'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='{slot:#04x}' function='0x0'/>\n    </interface>\n",
     "bridge_ensure": "test -d /sys/class/net/{bridge}/bridge",
     "define": "virsh -c qemu:///system define {file}",
@@ -45,6 +45,10 @@
     "poweroff": "virsh -c qemu:///system destroy {name}",
     "undefine": "virsh -c qemu:///system undefine --nvram {name}",
     "access_group": "libvirt",
-    "bridges_list": "ls -d /sys/class/net/*/bridge 2>/dev/null | awk -F/ '$5 ~ /^fnas_bridge/ {{print $5}}'"
+    "bridges_list": "ls -d /sys/class/net/*/bridge 2>/dev/null | awk -F/ '$5 ~ /^fnas_bridge/ {{print $5}}'",
+    "dir_ensure": "mkdir -p {path}",
+    "cdrom_template": "    <disk type='file' device='cdrom'>\n      <driver name='qemu' type='raw'/>\n      <source file='{path}'/>\n      <target dev='hda' bus='ide'/>\n      <readonly/>\n      <boot order='1'/>\n    </disk>\n",
+    "install": "virsh -c qemu:///system start {name}",
+    "vnc_address": "virsh -c qemu:///system vncdisplay {name} | awk -F: 'NF == 2 {{print $1 \":\" 5900 + $2}}'"
   }
 }

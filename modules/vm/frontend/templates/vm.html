@@ -56,15 +56,50 @@
         <div class="tabs">
           <button class="tab-btn active" data-tab="summary">Summary</button>
           <button class="tab-btn" data-tab="hardware">Hardware</button>
-          <button class="tab-btn" disabled title="Not available yet">Console</button>
+          <button class="tab-btn" data-tab="console">Console</button>
           <button class="tab-btn" disabled title="Not available yet">Passthrough</button>
           <button class="tab-btn" disabled title="Not available yet">Options</button>
           <button class="tab-btn" disabled title="Not available yet">Snapshots</button>
         </div>
         <div class="tab-panel active" id="tab-summary"></div>
         <div class="tab-panel" id="tab-hardware"></div>
+        <div class="tab-panel" id="tab-console">
+          <div class="d-flex gap-3" style="align-items:center;margin-bottom:12px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" id="btn-console">Connect</button>
+            <button class="btn btn-sm" id="btn-cad" hidden>Ctrl+Alt+Del</button>
+            <button class="btn btn-sm" id="btn-fullscreen" hidden>Full screen</button>
+            <span class="form-hint" id="console-line"></span>
+          </div>
+          <div id="console-screen" style="height:520px;background:#000;border-radius:8px;overflow:hidden" hidden></div>
+        </div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="section" id="isos-section" hidden>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px">Install images</div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Name</th><th>Size</th><th></th></tr></thead>
+        <tbody id="isos-body"></tbody>
+      </table>
+    </div>
+    <div class="d-flex gap-3" style="margin-top:14px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0">
+        <label for="f-iso-file">Upload from this computer</label>
+        <input id="f-iso-file" class="input" type="file" accept=".iso" style="max-width:320px">
+      </div>
+      <form id="form-iso-url" class="d-flex gap-3" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0">
+          <label for="f-iso-url">Or fetch from an address</label>
+          <input id="f-iso-url" class="input" type="url" required placeholder="https://…/image.iso" style="min-width:320px">
+        </div>
+        <button type="submit" class="btn btn-sm" id="btn-iso-url">Fetch</button>
+      </form>
+    </div>
+    <p class="form-hint" id="iso-line" hidden style="margin-top:10px"></p>
   </div>
 </div>
 
@@ -129,4 +164,8 @@
 
 {% block extra_js %}
 <script src="/static/modules/vm/js/vm.js"></script>
+<script type="module">
+  import RFB from '/static/modules/vm/novnc/core/rfb.js';
+  window.NoVncRFB = RFB;
+</script>
 {% endblock %}
