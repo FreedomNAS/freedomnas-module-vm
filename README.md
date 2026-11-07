@@ -7,7 +7,7 @@ does not know which one it is talking to.
 
 ## What it does today
 
-This is the module's skeleton:
+The module so far:
 
 - **Set up** installs the edition's hypervisor and prepares the `<pool>/vm`
   dataset on the chosen pool.
@@ -72,9 +72,16 @@ edition, so it must boot through the UEFI fallback path
 
 | Route | What it does |
 |-------|--------------|
+| `GET /api/vm/status` | The hypervisor, the pool, the bridges, the machines and the images |
+| `POST /api/vm/setup` | Installs the hypervisor if needed and sets it up on `{pool}` (a job) |
 | `POST /api/vm/machines` | Creates a machine from `{name, cpus, memory_mb, disks, nics}` |
-| `POST /api/vm/machines/<name>/<action>` | `start`, `stop` (the guest shuts itself down) or `poweroff` |
+| `POST /api/vm/machines/<name>/<action>` | `start`, `stop` (the guest shuts itself down) or `poweroff`, kept as what it does at boot |
+| `POST /api/vm/machines/<name>/install` | Starts a stopped machine from `{iso}`, this once |
+| `WS /api/vm/machines/<name>/console` | The machine's screen, after a first message with the credentials |
 | `DELETE /api/vm/machines/<name>` | Removes a stopped machine; its disks stay unless `?destroy_disks=true` |
+| `POST /api/vm/isos?name=<file>`, `POST /api/vm/isos/download`, `DELETE /api/vm/isos/<name>` | Upload, fetch or remove an install image |
+
+Every route is described in freedomnas-docs, `docs/api/vm.md`.
 
 ## Still to build
 
