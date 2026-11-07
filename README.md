@@ -5,6 +5,10 @@ NAS, with **libvirt and QEMU/KVM on Linux** and **vm-bhyve on FreeBSD**. The
 backend comes from the edition's profile in `profiles/vm/`; the Python code
 does not know which one it is talking to.
 
+**Not published.** The module is in no package repository, not even `dev`,
+and stays out until it is stable and works fully. To try it on a test machine,
+copy `modules/vm` and `profiles/vm` from this repository by hand.
+
 ## What it does today
 
 The module so far:
