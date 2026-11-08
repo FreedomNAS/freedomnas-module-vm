@@ -220,24 +220,34 @@ def test_status_shows_records_and_machines_it_did_not_make(engine):
     assert [(m["name"], m["state"], m.get("foreign", False)) for m in shown] == [("win", "running", False), ("other", "stopped", True)]
 
 
-def test_set_up_puts_its_account_in_the_access_group_and_its_record(engine):
+def test_set_up_puts_its_administrator_in_the_access_group_and_not_in_its_record(engine):
     engine.outputs[("users", "group_exists")] = "libvirt:x:79:\n"
-    config = FakeConfig(users=[{"username": "sarah", "groups": ["sudo"]}])
+    config = FakeConfig(users=[{"username": "sarah", "groups": [], "admin": True},
+                               {"username": "mario", "groups": []}])
     vm.setup(engine, config, "tank", "sarah")
     assert ("users", "add_to_group", {"username": "sarah", "group": "libvirt"}) in engine.calls
-    assert config.get_user("sarah")["groups"] == ["sudo", "libvirt"]
+    assert config.get_user("sarah")["groups"] == []
     shown = vm.status(engine, config)
     assert shown["access_group"] == "libvirt" and shown["access_members"] == ["sarah"]
 
 
+def test_an_account_that_does_not_administer_never_joins_the_access_group(engine):
+    engine.outputs[("users", "group_exists")] = "libvirt:x:79:\n"
+    config = FakeConfig(users=[{"username": "mario", "groups": []}])
+    vm.grant_access(engine, config, "mario")
+    assert "users.add_to_group" not in engine.actions()
+
+
 def test_an_account_already_in_the_group_is_left_alone(engine):
-    config = FakeConfig(users=[{"username": "sarah", "groups": ["libvirt"]}])
+    engine.outputs[("users", "group_exists")] = "libvirt:x:79:\n"
+    engine.outputs[("users", "list_groups")] = "sarah wheel libvirt"
+    config = FakeConfig(users=[{"username": "sarah", "groups": [], "admin": True}])
     vm.grant_access(engine, config, "sarah")
     assert "users.add_to_group" not in engine.actions()
 
 
 def test_a_missing_group_or_a_failure_does_not_stop_the_set_up_or_touch_the_record():
-    config = FakeConfig(users=[{"username": "sarah", "groups": []}])
+    config = FakeConfig(users=[{"username": "sarah", "groups": [], "admin": True}])
     engine = FakeEngine()
     vm.setup(engine, config, "tank", "sarah")
     assert "users.add_to_group" not in engine.actions() and config.get_user("sarah")["groups"] == []
