@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: freedomnas-module-vm
 Upstream-Contact: FreedomNAS Team <dev@freedomnas.io>
-Source: https://codeberg.org/FreedomNAS/freedomnas-module-vm
+Source: https://github.com/FreedomNAS/freedomnas-module-vm
 
 Files: modules/vm/frontend/static/novnc/*
 Copyright: The noVNC authors

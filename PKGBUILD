@@ -5,10 +5,10 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Virtual machines for FreedomNAS: libvirt on Linux, vm-bhyve on FreeBSD"
 arch=('any')
-url="https://codeberg.org/FreedomNAS/freedomnas-module-vm"
+url="https://github.com/FreedomNAS/freedomnas-module-vm"
 license=('MPL-2.0')
 depends=('freedomnas-core>0.9.12' 'freedomnas-webui>0.9.12' 'qemu-base' 'libvirt' 'edk2-ovmf' 'dnsmasq')
-source=("git+https://codeberg.org/FreedomNAS/freedomnas-module-vm.git#tag=v${pkgver}")
+source=("git+https://github.com/FreedomNAS/freedomnas-module-vm.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 
 _install() {

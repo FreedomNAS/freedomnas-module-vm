@@ -4,9 +4,9 @@ Priority: optional
 Maintainer: FreedomNAS Team <dev@freedomnas.io>
 Standards-Version: 4.6.2
 Build-Depends: debhelper-compat (= 13)
-Homepage: https://codeberg.org/FreedomNAS/freedomnas-module-vm
-Vcs-Browser: https://codeberg.org/FreedomNAS/freedomnas-module-vm
-Vcs-Git: https://codeberg.org/FreedomNAS/freedomnas-module-vm.git
+Homepage: https://github.com/FreedomNAS/freedomnas-module-vm
+Vcs-Browser: https://github.com/FreedomNAS/freedomnas-module-vm
+Vcs-Git: https://github.com/FreedomNAS/freedomnas-module-vm.git
 
 Package: freedomnas-module-vm
 Architecture: all
